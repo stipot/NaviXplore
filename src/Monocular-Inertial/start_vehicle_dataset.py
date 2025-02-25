@@ -10,16 +10,127 @@ import cv2
 import numpy as np
 import math
 import random
+import yaml
 from collections import deque
 from scipy.interpolate import interp1d
 
+
 # Частоты для симуляции и записи
-SIMULATION_HZ = 50     # Частота симуляции CARLA
+SIMULATION_HZ = 200     # Частота симуляции CARLA
 TARGET_FPS = 20       # Частота камеры
 IMU_FREQUENCY = 200   # Желаемая частота IMU (будет эмулироваться)
 FRAME_TIME = 1.0 / TARGET_FPS
 IMU_FRAME_TIME = 1.0 / IMU_FREQUENCY
 SIMULATION_DT = 1.0 / SIMULATION_HZ
+
+def create_sensor_configs(output_path, camera_transform, imu_transform):
+    """Создает конфигурационные файлы датасета."""
+    # body.yaml
+    body_yaml = {
+        'comment': 'CARLA Vehicle Dataset'
+    }
+    
+    # cam0/sensor.yaml
+    camera_yaml = {
+        'sensor_type': 'camera',
+        'comment': 'CARLA RGB Camera',
+        'T_BS': {
+            'cols': 4,
+            'rows': 4,
+            'data': [1.0, 0.0, 0.0, camera_transform.location.x,
+                    0.0, 1.0, 0.0, camera_transform.location.y,
+                    0.0, 0.0, 1.0, camera_transform.location.z,
+                    0.0, 0.0, 0.0, 1.0]
+        },
+        'rate_hz': TARGET_FPS,
+        'resolution': [752, 480],
+        'camera_model': 'pinhole',
+        'intrinsics': [458.654, 457.296, 367.215, 248.375],
+        'distortion_model': 'radial-tangential',
+        'distortion_coefficients': [-0.28340811, 0.07395907, 0.00019359, 1.76187114e-05]
+    }
+    
+    # imu0/sensor.yaml
+    imu_yaml = {
+        'sensor_type': 'imu',
+        'comment': 'CARLA IMU Sensor',
+        'T_BS': {
+            'cols': 4,
+            'rows': 4,
+            'data': [1.0, 0.0, 0.0, imu_transform.location.x,
+                    0.0, 1.0, 0.0, imu_transform.location.y,
+                    0.0, 0.0, 1.0, imu_transform.location.z,
+                    0.0, 0.0, 0.0, 1.0]
+        },
+        'rate_hz': IMU_FREQUENCY,
+        'gyroscope_noise_density': 1.6968e-04,
+        'gyroscope_random_walk': 1.9393e-05,
+        'accelerometer_noise_density': 2.0000e-3,
+        'accelerometer_random_walk': 3.0000e-3
+    }
+    
+    # Сохраняем конфиги
+    with open(os.path.join(output_path, "mav0/body.yaml"), 'w') as f:
+        yaml.dump(body_yaml, f, default_flow_style=None)
+    with open(os.path.join(output_path, "mav0/cam0/sensor.yaml"), 'w') as f:
+        yaml.dump(camera_yaml, f, default_flow_style=None)
+    with open(os.path.join(output_path, "mav0/imu0/sensor.yaml"), 'w') as f:
+        yaml.dump(imu_yaml, f, default_flow_style=None)
+
+def verify_dataset(dataset_path):
+    """Проверяет корректность записанного датасета."""
+    logging.info("\nПроверка датасета:")
+    
+    time.sleep(0.1)  # Даем время на закрытие файлов
+    
+    # Проверяем структуру директорий
+    required_paths = [
+        "mav0/cam0/data",
+        "mav0/cam0/data.csv",
+        "mav0/cam0/timestamps.txt",
+        "mav0/cam0/sensor.yaml",
+        "mav0/imu0/data.csv",
+        "mav0/imu0/sensor.yaml",
+        "mav0/body.yaml"
+    ]
+    
+    for path in required_paths:
+        full_path = os.path.join(dataset_path, path)
+        if not os.path.exists(full_path):
+            logging.error(f"Отсутствует {path}")
+            return False
+    
+    # Проверяем файл с IMU данными
+    imu_data_path = os.path.join(dataset_path, "mav0/imu0/data.csv")
+    with open(imu_data_path, 'r') as f:
+        imu_lines = f.readlines()[1:]  # Пропускаем заголовок
+        imu_count = len(imu_lines)
+    
+    # Проверяем изображения
+    images_path = os.path.join(dataset_path, "mav0/cam0/data")
+    images = sorted(os.listdir(images_path))
+    image_count = len(images)
+    
+    if image_count == 0 or imu_count == 0:
+        logging.error("Датасет пуст!")
+        return False
+    
+    # Проверяем частоты
+    first_img = int(images[0].split('.')[0]) / 1e9
+    last_img = int(images[-1].split('.')[0]) / 1e9
+    duration = last_img - first_img
+    
+    cam_freq = image_count / duration
+    imu_freq = imu_count / duration
+    
+    logging.info(f"Длительность записи: {duration:.1f} секунд")
+    logging.info(f"Количество изображений: {image_count}")
+    logging.info(f"Количество IMU измерений: {imu_count}")
+    logging.info(f"Соотношение IMU/Image: {imu_count/image_count:.1f}")
+    logging.info(f"Частота камеры: {cam_freq:.1f} Hz (ожидалось {TARGET_FPS})")
+    logging.info(f"Частота IMU: {imu_freq:.1f} Hz (ожидалось {IMU_FREQUENCY})")
+    
+    return True
 
 class DatasetRecorder:
     def __init__(self, output_path):
@@ -27,102 +138,116 @@ class DatasetRecorder:
         self.mav0_path = os.path.join(output_path, "mav0")
         self.cam0_path = os.path.join(self.mav0_path, "cam0")
         self.imu0_path = os.path.join(self.mav0_path, "imu0")
+        self.is_closed = False
         
         os.makedirs(os.path.join(self.cam0_path, "data"), exist_ok=True)
         os.makedirs(self.imu0_path, exist_ok=True)
         
         self.cam_timestamps = open(os.path.join(self.cam0_path, "timestamps.txt"), "w")
+        self.cam_data = open(os.path.join(self.cam0_path, "data.csv"), "w")
+        self.cam_data.write("#timestamp [ns],filename\n")
+        
         self.imu_data = open(os.path.join(self.imu0_path, "data.csv"), "w")
         self.imu_data.write("#timestamp [ns],w_RS_S_x [rad s^-1],w_RS_S_y [rad s^-1],w_RS_S_z [rad s^-1],a_RS_S_x [m s^-2],a_RS_S_y [m s^-2],a_RS_S_z [m s^-2]\n")
         
-        self.last_imu_reading = None
-        self.next_imu_reading = None
-        self.last_frame_time = 0
-        self.start_time = None
+        self.cam_start_timestamp = None  # Новый стартовый timestamp для камеры
+        self.last_cam_timestamp = None
         self.frame_count = 0
         self.imu_count = 0
 
-    def interpolate_imu(self, t1, t2, imu1, imu2):
-        """Интерполирует данные IMU между двумя измерениями."""
-        num_points = max(2, int((t2 - t1) * IMU_FREQUENCY))
-        times = np.linspace(t1, t2, num_points)[:-1]  # Исключаем последнюю точку
-        
-        # Создаем массивы для интерполяции
-        t = np.array([t1, t2])
-        gyro1, acc1 = imu1.gyroscope, imu1.accelerometer
-        gyro2, acc2 = imu2.gyroscope, imu2.accelerometer
-        
-        # Интерполируем каждую ось
-        for time in times:
-            alpha = (time - t1) / (t2 - t1)
-            # Линейная интерполяция
-            gx = gyro1.x + alpha * (gyro2.x - gyro1.x)
-            gy = gyro1.y + alpha * (gyro2.y - gyro1.y)
-            gz = gyro1.z + alpha * (gyro2.z - gyro1.z)
-            ax = acc1.x + alpha * (acc2.x - acc1.x)
-            ay = acc1.y + alpha * (acc2.y - acc1.y)
-            az = acc1.z + alpha * (acc2.z - acc1.z)
-            
-            # Добавляем небольшой случайный шум для реалистичности
-            noise_scale = 0.01
-            gx += np.random.normal(0, noise_scale * abs(gx) if abs(gx) > 0.001 else noise_scale)
-            gy += np.random.normal(0, noise_scale * abs(gy) if abs(gy) > 0.001 else noise_scale)
-            gz += np.random.normal(0, noise_scale * abs(gz) if abs(gz) > 0.001 else noise_scale)
-            ax += np.random.normal(0, noise_scale * abs(ax) if abs(ax) > 0.001 else noise_scale)
-            ay += np.random.normal(0, noise_scale * abs(ay) if abs(ay) > 0.001 else noise_scale)
-            az += np.random.normal(0, noise_scale * abs(az) if abs(az) > 0.001 else noise_scale)
-            
-            timestamp_ns = int(time * 1e9)
-            self.imu_data.write(f"{timestamp_ns},{gx},{gy},{gz},{ax},{ay},{az}\n")
-            self.imu_count += 1
-
     def handle_camera(self, image):
-        """Сохраняет кадр и его timestamp."""
-        if self.start_time is None:
-            self.start_time = image.timestamp
+        """Сохраняет кадр и его timestamp в наносекундах."""
+        if self.is_closed:
+            return False
+        
+        try:
+            timestamp_ns = time.time_ns()
+            if self.cam_start_timestamp is None:
+                self.cam_start_timestamp = timestamp_ns
             
-        current_time = image.timestamp
-        frame = np.frombuffer(image.raw_data, dtype=np.uint8)
-        frame = frame.reshape((image.height, image.width, 4))[:, :, :3]
-        
-        timestamp_ns = int(current_time * 1e9)
-        filename = f"{timestamp_ns}.png"
-        
-        cv2.imwrite(os.path.join(self.cam0_path, "data", filename), frame)
-        self.cam_timestamps.write(f"{timestamp_ns}\n")
-        self.cam_timestamps.flush()
-        
-        self.last_frame_time = current_time
-        self.frame_count += 1
+            self.last_cam_timestamp = timestamp_ns
+            filename = f"{timestamp_ns}.png"
+
+            # ...existing code для преобразования изображения...
+            frame = np.frombuffer(image.raw_data, dtype=np.uint8)
+            frame = frame.reshape((image.height, image.width, 4))[:, :, :3]
+            cv2.imwrite(os.path.join(self.cam0_path, "data", filename), frame)
+
+            self.cam_timestamps.write(f"{timestamp_ns}\n")
+            self.cam_timestamps.flush()
+            
+            self.cam_data.write(f"{timestamp_ns},{filename}\n")
+            self.cam_data.flush()
+            
+            self.frame_count += 1
+
+        except Exception as e:
+            logging.error(f"Error in handle_camera: {e}")
         return True
 
     def handle_imu(self, imu_data):
-        """Обрабатывает и интерполирует данные IMU."""
-        if self.last_imu_reading is None:
-            self.last_imu_reading = (imu_data.timestamp, imu_data)
-            return True
-            
-        self.interpolate_imu(
-            self.last_imu_reading[0],
-            imu_data.timestamp,
-            self.last_imu_reading[1],
-            imu_data
-        )
+        """Обрабатывает данные IMU и записывает их с текущим timestamp."""
+        if self.is_closed:
+            return False
         
-        self.last_imu_reading = (imu_data.timestamp, imu_data)
+        try:
+            timestamp_ns = time.time_ns()
+            # Записываем данные IMU напрямую без интерполяции
+            gx = imu_data.gyroscope.x
+            gy = imu_data.gyroscope.y
+            gz = imu_data.gyroscope.z
+            ax = imu_data.accelerometer.x
+            ay = imu_data.accelerometer.y
+            az = imu_data.accelerometer.z
+            self.imu_data.write(f"{timestamp_ns},{gx},{gy},{gz},{ax},{ay},{az}\n")
+            self.imu_data.flush()
+            self.imu_count += 1
+        except Exception as e:
+            logging.error(f"Error in handle_imu: {e}")
         return True
 
     def close(self):
-        """Закрывает файлы и выводит статистику."""
+        """Закрывает файлы и выводит статистику с использованием реальных timestamp."""
+        if self.is_closed:
+            return
+        
         self.cam_timestamps.close()
+        self.cam_data.close()
         self.imu_data.close()
         
-        if self.start_time is not None:
-            duration = self.last_frame_time - self.start_time
+        if self.cam_start_timestamp and self.last_cam_timestamp:
+            duration = (self.last_cam_timestamp - self.cam_start_timestamp) / 1e9
             logging.info(f"Записано {self.frame_count} кадров ({self.frame_count/duration:.1f} Hz)")
             logging.info(f"Записано {self.imu_count} IMU измерений ({self.imu_count/duration:.1f} Hz)")
         else:
             logging.warning("Не было записано ни одного кадра!")
+        
+        self.is_closed = True
+
+def move_vehicle_for_initialization(world, vehicle, duration=5):
+    """
+    Плавное движение для инициализации датасета:
+    - Плавные повороты и небольшие смещения для стабилизации датчиков.
+    """
+    start_time = time.time()
+    spawn_transform = vehicle.get_transform()
+    base_loc = spawn_transform.location
+    base_yaw = spawn_transform.rotation.yaw
+    yaw_amplitude = 5.0  # меньшие амплитуды
+    yaw_frequency = 0.5
+    while (time.time() - start_time) < duration:
+        current_time = time.time() - start_time
+        yaw_offset = yaw_amplitude * math.sin(2 * math.pi * yaw_frequency * current_time)
+        new_yaw = (base_yaw + yaw_offset) % 360
+        new_transform = carla.Transform(
+            carla.Location(x=base_loc.x, y=base_loc.y, z=base_loc.z),
+            carla.Rotation(pitch=0, yaw=new_yaw, roll=0)
+        )
+        vehicle.set_transform(new_transform)
+        world.tick()
+    # Вернем автомобиль в исходное положение
+    vehicle.set_transform(spawn_transform)
+    world.tick()
 
 def main():
     argparser = argparse.ArgumentParser(description="Запись датасета из CARLA")
@@ -135,7 +260,7 @@ def main():
     logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.INFO)
     
     client = carla.Client('127.0.0.1', 2000)
-    client.set_timeout(10.0)
+    client.set_timeout(20.0)  # Увеличиваем таймаут
     
     # Получаем список доступных карт
     available_maps = client.get_available_maps()
@@ -156,72 +281,65 @@ def main():
     logging.info(f"Загрузка карты {full_map_path}...")
     world = client.load_world(full_map_path)
     
-    # Настройки для максимальной производительности
     settings = world.get_settings()
-    settings.synchronous_mode = True
+    os.makedirs(args.output, exist_ok=True)
+    recorder = DatasetRecorder(args.output)
     settings.fixed_delta_seconds = SIMULATION_DT
+    settings.synchronous_mode = True      # включаем строгий синхронный режим
     settings.no_rendering_mode = True
     world.apply_settings(settings)
 
     try:
         recorder = DatasetRecorder(args.output)
-        
         blueprint_library = world.get_blueprint_library()
         vehicle_bp = blueprint_library.find(args.vehicle)
-        
         spawn_points = world.get_map().get_spawn_points()
         if not spawn_points:
             raise ValueError("Не найдены точки спавна!")
-        spawn_point = spawn_points[0]  # Используем первую точку для стабильности
-        
+        spawn_point = spawn_points[0]
         vehicle = world.spawn_actor(vehicle_bp, spawn_point)
         logging.info(f"Создан автомобиль: {vehicle.type_id}")
         
-        # Настраиваем камеру
+        # Настройка камеры
         camera_bp = blueprint_library.find('sensor.camera.rgb')
         camera_bp.set_attribute('image_size_x', '752')
         camera_bp.set_attribute('image_size_y', '480')
-        camera_bp.set_attribute('fov', '90')
-        camera_bp.set_attribute('sensor_tick', str(FRAME_TIME))
-        
-        camera_transform = carla.Transform(
-            carla.Location(x=0.0, z=1.0),
-            carla.Rotation(pitch=0, yaw=0, roll=0)
-        )
+        camera_bp.set_attribute('fov', '110')
+        camera_bp.set_attribute('sensor_tick', str(FRAME_TIME))  # 20 Hz: 1/20
+        camera_transform = carla.Transform(carla.Location(x=1.5, z=2.4),
+                                           carla.Rotation(pitch=0, yaw=0, roll=0))
         camera = world.spawn_actor(camera_bp, camera_transform, attach_to=vehicle)
         
-        # Настраиваем IMU
+        # Настройка IMU
         imu_bp = blueprint_library.find('sensor.other.imu')
-        imu_bp.set_attribute('sensor_tick', str(SIMULATION_DT))
+        imu_bp.set_attribute('sensor_tick', str(SIMULATION_DT))  # 200 Hz: 1/200
         imu_transform = carla.Transform(carla.Location(x=0, z=0))
         imu = world.spawn_actor(imu_bp, imu_transform, attach_to=vehicle)
         
+        create_sensor_configs(args.output, camera_transform, imu_transform)
         camera.listen(lambda image: recorder.handle_camera(image))
         imu.listen(lambda imu_data: recorder.handle_imu(imu_data))
         
-        # Движение по траектории восьмерки
-        start_time = time.time()
-        while (time.time() - start_time) < args.duration:
-            current_time = time.time() - start_time
-            
-            # Параметрическая кривая в форме восьмерки
-            t = current_time * 0.5
-            x = math.cos(t) * 10
-            y = math.sin(2*t) * 5
-            yaw = math.degrees(math.atan2(math.cos(2*t), -math.sin(t)))
-            
-            vehicle.set_transform(carla.Transform(
-                carla.Location(x=spawn_point.location.x + x, y=spawn_point.location.y + y, z=spawn_point.location.z),
-                carla.Rotation(pitch=0, yaw=yaw, roll=0)
-            ))
-            
-            world.tick()
+        # Фаза инициализации: плавное движение
+        logging.info("Инициализация IMU: выполняется плавное движение...")
+        move_vehicle_for_initialization(world, vehicle, duration=5)
         
-        recorder.close()
+        vehicle.set_autopilot(True)
         
+        # Новый цикл: фиксированное число тик
+        num_ticks = int(args.duration * SIMULATION_HZ)   # например, 60 * 200 = 12000 тик
+        for _ in range(num_ticks):
+            world.tick()  # обновление симуляции вручную
+        
+        # Останавливаем сенсоры до закрытия файлов и ждем завершения callback-ов
         logging.info("Удаление акторов...")
         camera.stop()
         imu.stop()
+        time.sleep(0.1)
+        
+        recorder.close()
+        verify_dataset(args.output)
+        
         camera.destroy()
         imu.destroy()
         vehicle.destroy()

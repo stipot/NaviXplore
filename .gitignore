@@ -1,0 +1,8 @@
+datasets
+src/docker_ORB-SLAM3_part/MH01/
+src/docker_ORB-SLAM3_part/Calibration/
+src/docker_ORB-SLAM3_part/evaluation/
+src/docker_ORB-SLAM3_part/Monocular-Inertial/EuRoC.yaml
+src/docker_ORB-SLAM3_part/Monocular-Inertial/EuRoC_TimeStamps/
+src/docker_ORB-SLAM3_part/Monocular-Inertial/mono_inertial_euroc.cc
+.vscode
