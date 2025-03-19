@@ -12,13 +12,12 @@ import math
 import random
 import yaml
 from collections import deque
-from scipy.interpolate import interp1d
 
 
-# Частоты для симуляции и записи
-SIMULATION_HZ = 200     # Частота симуляции CARLA
-TARGET_FPS = 20       # Частота камеры
-IMU_FREQUENCY = 200   # Желаемая частота IMU (будет эмулироваться)
+
+SIMULATION_HZ = 200
+TARGET_FPS = 20
+IMU_FREQUENCY = 200
 FRAME_TIME = 1.0 / TARGET_FPS
 IMU_FRAME_TIME = 1.0 / IMU_FREQUENCY
 SIMULATION_DT = 1.0 / SIMULATION_HZ
@@ -69,7 +68,6 @@ def create_sensor_configs(output_path, camera_transform, imu_transform):
         'accelerometer_random_walk': 3.0000e-3
     }
     
-    # Сохраняем конфиги
     with open(os.path.join(output_path, "mav0/body.yaml"), 'w') as f:
         yaml.dump(body_yaml, f, default_flow_style=None)
     with open(os.path.join(output_path, "mav0/cam0/sensor.yaml"), 'w') as f:
@@ -81,9 +79,8 @@ def verify_dataset(dataset_path):
     """Проверяет корректность записанного датасета."""
     logging.info("\nПроверка датасета:")
     
-    time.sleep(0.1)  # Даем время на закрытие файлов
+    time.sleep(0.1)
     
-    # Проверяем структуру директорий
     required_paths = [
         "mav0/cam0/data",
         "mav0/cam0/data.csv",
@@ -100,13 +97,11 @@ def verify_dataset(dataset_path):
             logging.error(f"Отсутствует {path}")
             return False
     
-    # Проверяем файл с IMU данными
     imu_data_path = os.path.join(dataset_path, "mav0/imu0/data.csv")
     with open(imu_data_path, 'r') as f:
-        imu_lines = f.readlines()[1:]  # Пропускаем заголовок
+        imu_lines = f.readlines()[1:]
         imu_count = len(imu_lines)
     
-    # Проверяем изображения
     images_path = os.path.join(dataset_path, "mav0/cam0/data")
     images = sorted(os.listdir(images_path))
     image_count = len(images)
@@ -115,7 +110,6 @@ def verify_dataset(dataset_path):
         logging.error("Датасет пуст!")
         return False
     
-    # Проверяем частоты
     first_img = int(images[0].split('.')[0]) / 1e9
     last_img = int(images[-1].split('.')[0]) / 1e9
     duration = last_img - first_img
@@ -150,7 +144,7 @@ class DatasetRecorder:
         self.imu_data = open(os.path.join(self.imu0_path, "data.csv"), "w")
         self.imu_data.write("#timestamp [ns],w_RS_S_x [rad s^-1],w_RS_S_y [rad s^-1],w_RS_S_z [rad s^-1],a_RS_S_x [m s^-2],a_RS_S_y [m s^-2],a_RS_S_z [m s^-2]\n")
         
-        self.cam_start_timestamp = None  # Новый стартовый timestamp для камеры
+        self.cam_start_timestamp = None
         self.last_cam_timestamp = None
         self.frame_count = 0
         self.imu_count = 0
@@ -168,7 +162,6 @@ class DatasetRecorder:
             self.last_cam_timestamp = timestamp_ns
             filename = f"{timestamp_ns}.png"
 
-            # ...existing code для преобразования изображения...
             frame = np.frombuffer(image.raw_data, dtype=np.uint8)
             frame = frame.reshape((image.height, image.width, 4))[:, :, :3]
             cv2.imwrite(os.path.join(self.cam0_path, "data", filename), frame)
@@ -192,7 +185,6 @@ class DatasetRecorder:
         
         try:
             timestamp_ns = time.time_ns()
-            # Записываем данные IMU напрямую без интерполяции
             gx = imu_data.gyroscope.x
             gy = imu_data.gyroscope.y
             gz = imu_data.gyroscope.z
@@ -233,8 +225,9 @@ def move_vehicle_for_initialization(world, vehicle, duration=5):
     spawn_transform = vehicle.get_transform()
     base_loc = spawn_transform.location
     base_yaw = spawn_transform.rotation.yaw
-    yaw_amplitude = 5.0  # меньшие амплитуды
+    yaw_amplitude = 5.0
     yaw_frequency = 0.5
+    
     while (time.time() - start_time) < duration:
         current_time = time.time() - start_time
         yaw_offset = yaw_amplitude * math.sin(2 * math.pi * yaw_frequency * current_time)
@@ -245,7 +238,7 @@ def move_vehicle_for_initialization(world, vehicle, duration=5):
         )
         vehicle.set_transform(new_transform)
         world.tick()
-    # Вернем автомобиль в исходное положение
+
     vehicle.set_transform(spawn_transform)
     world.tick()
 
@@ -260,13 +253,11 @@ def main():
     logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.INFO)
     
     client = carla.Client('127.0.0.1', 2000)
-    client.set_timeout(20.0)  # Увеличиваем таймаут
+    client.set_timeout(20.0)
     
-    # Получаем список доступных карт
     available_maps = client.get_available_maps()
     logging.info(f"Доступные карты: {available_maps}")
     
-    # Ищем нужную карту
     map_name = args.map
     full_map_path = None
     for m in available_maps:
@@ -277,7 +268,6 @@ def main():
     if full_map_path is None:
         raise ValueError(f"Карта '{map_name}' не найдена. Доступные карты: {available_maps}")
     
-    # Загружаем карту с полным путем
     logging.info(f"Загрузка карты {full_map_path}...")
     world = client.load_world(full_map_path)
     
@@ -285,7 +275,7 @@ def main():
     os.makedirs(args.output, exist_ok=True)
     recorder = DatasetRecorder(args.output)
     settings.fixed_delta_seconds = SIMULATION_DT
-    settings.synchronous_mode = True      # включаем строгий синхронный режим
+    settings.synchronous_mode = True
     settings.no_rendering_mode = True
     world.apply_settings(settings)
 
@@ -300,19 +290,17 @@ def main():
         vehicle = world.spawn_actor(vehicle_bp, spawn_point)
         logging.info(f"Создан автомобиль: {vehicle.type_id}")
         
-        # Настройка камеры
         camera_bp = blueprint_library.find('sensor.camera.rgb')
         camera_bp.set_attribute('image_size_x', '752')
         camera_bp.set_attribute('image_size_y', '480')
         camera_bp.set_attribute('fov', '110')
-        camera_bp.set_attribute('sensor_tick', str(FRAME_TIME))  # 20 Hz: 1/20
+        camera_bp.set_attribute('sensor_tick', str(FRAME_TIME))
         camera_transform = carla.Transform(carla.Location(x=1.5, z=2.4),
                                            carla.Rotation(pitch=0, yaw=0, roll=0))
         camera = world.spawn_actor(camera_bp, camera_transform, attach_to=vehicle)
         
-        # Настройка IMU
         imu_bp = blueprint_library.find('sensor.other.imu')
-        imu_bp.set_attribute('sensor_tick', str(SIMULATION_DT))  # 200 Hz: 1/200
+        imu_bp.set_attribute('sensor_tick', str(SIMULATION_DT))
         imu_transform = carla.Transform(carla.Location(x=0, z=0))
         imu = world.spawn_actor(imu_bp, imu_transform, attach_to=vehicle)
         
@@ -320,19 +308,17 @@ def main():
         camera.listen(lambda image: recorder.handle_camera(image))
         imu.listen(lambda imu_data: recorder.handle_imu(imu_data))
         
-        # Фаза инициализации: плавное движение
         logging.info("Инициализация IMU: выполняется плавное движение...")
         move_vehicle_for_initialization(world, vehicle, duration=5)
         
         vehicle.set_autopilot(True)
         
-        # Новый цикл: фиксированное число тик
-        num_ticks = int(args.duration * SIMULATION_HZ)   # например, 60 * 200 = 12000 тик
-        for _ in range(num_ticks):
-            world.tick()  # обновление симуляции вручную
+        num_ticks = int(args.duration * SIMULATION_HZ)
         
-        # Останавливаем сенсоры до закрытия файлов и ждем завершения callback-ов
-        logging.info("Удаление акторов...")
+        for _ in range(num_ticks):
+            world.tick()
+        
+        logging.info("Удаление объектов...")
         camera.stop()
         imu.stop()
         time.sleep(0.1)
