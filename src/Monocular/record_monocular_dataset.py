@@ -11,7 +11,7 @@ import random
 import signal
 
 
-SIMULATION_HZ = 20
+SIMULATION_HZ = 60
 SIMULATION_DT = 1.0 / SIMULATION_HZ
 
 running = True
@@ -68,6 +68,7 @@ def main():
     parser.add_argument('--tm-port', type=int, default=8000, help='Порт Traffic Manager')
     parser.add_argument('--preview', dest='preview', action='store_true', default=True)
     parser.add_argument('--no-preview', dest='preview', action='store_false')
+    parser.add_argument('--speed', type=float, default=100.0, help='Скорость движения в процентах (100%% - нормальная, 50%% - половина)')
     args = parser.parse_args()
     random.seed(args.seed)
     logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.INFO)
@@ -88,6 +89,7 @@ def main():
     try:
         tm = client.get_trafficmanager(args.tm_port)
         tm.set_synchronous_mode(True)
+        tm.global_percentage_speed_difference(100 - args.speed)
         blueprint_library = world.get_blueprint_library()
         vehicle_bp = blueprint_library.filter(args.filterv)[0]
         spawn_points = world.get_map().get_spawn_points()
@@ -150,4 +152,4 @@ if __name__ == '__main__':
     finally:
         logging.info("Программа завершена")
 
-# Использование: ./test_monocular_dataset.py --dataset <Директория>
+# Использование: ./record_monocular_dataset.py --output <Директория> --duration <Длительность в секундах>
