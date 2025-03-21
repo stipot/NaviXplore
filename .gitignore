@@ -6,3 +6,9 @@ src/docker_ORB-SLAM3_part/Monocular-Inertial/EuRoC.yaml
 src/docker_ORB-SLAM3_part/Monocular-Inertial/EuRoC_TimeStamps/
 src/docker_ORB-SLAM3_part/Monocular-Inertial/mono_inertial_euroc.cc
 .vscode
+src/Monocular/test_dataset
+src/Monocular/carla_dataset_long
+src/Monocular/carla_dataset_long_60fps
+src/Monocular/carla_dataset2
+src/Monocular/__pycache__
+src/docker_ORB-SLAM3_part/Monocular/camera
