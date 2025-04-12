@@ -12,3 +12,7 @@ src/Monocular/carla_dataset_long_60fps
 src/Monocular/carla_dataset2
 src/Monocular/__pycache__
 src/docker_ORB-SLAM3_part/Monocular/camera
+
+src/embeddings_dev/.ipynb_checkpoints
+src/embeddings_dev/weights
+src/embeddings_dev/dataset_small
