@@ -52,8 +52,15 @@ class CameraPose:
 
     @property
     def position(self) -> np.ndarray:
-        """Возвращает позицию камеры как numpy массив"""
-        return np.array([self.tx, self.ty, self.tz])
+        """Возвращает позицию камеры в мировой системе координат как numpy массив"""
+        if self.rotation_matrix is not None:
+            # Матрица вращения и вектор позиции
+            R = self.rotation_matrix[:3, :3]
+            t = np.array([self.tx, self.ty, self.tz])
+            # Преобразование позиции в мировую систему координат
+            return -np.dot(R.T, t)
+        else:
+            return np.array([self.tx, self.ty, self.tz])
 
 
 class ORBDataReceiver:
@@ -317,7 +324,7 @@ class DebugVisualizer:
             self.trajectory.append(pose)
 
             with open(self.trajectory_log_file, "a", encoding="utf-8") as f:
-                f.write(f"{timestamp},{pose.tx},{pose.ty},{pose.tz}\n")
+                f.write(f"{str(int(timestamp))},{pose.tx},{pose.ty},{pose.tz}\n")
 
         self.frame_counter += 1
         timestamp_str = str(int(timestamp))
@@ -383,7 +390,7 @@ class DebugVisualizer:
             for i, point in enumerate(points):
                 if point.world_x is not None:
                     f.write(
-                        f"{timestamp},{i},{point.image_x},{point.image_y},"
+                        f"{str(int(timestamp))},{i},{point.image_x},{point.image_y},"
                         f"{point.world_x},{point.world_y},{point.world_z}\n"
                     )
 
@@ -567,40 +574,57 @@ class DebugVisualizer:
         return report_path
 
     def _plot_trajectory(self, output_path):
-        """Создает и сохраняет график траектории камеры в 2D"""
+        """Создает и сохраняет график траектории камеры с правильной интерпретацией координат"""
         if len(self.trajectory) < 2:
-            logging.warning("Недостаточно данных для построения траектории")
             return
-
+            
         try:
-            fig = plt.figure(figsize=(10, 8))
-            ax = fig.add_subplot(111)
-
-            x_points = [pose.tx for pose in self.trajectory]
-            # Z вместо Y для отображения траектории в плоскости движения X-Z
-            z_points = [pose.tz for pose in self.trajectory]
-
-            ax.plot(x_points, z_points, "b-", label="Траектория камеры")
-            ax.scatter(
-                x_points[0], z_points[0], c="g", marker="o", s=100, label="Старт"
-            )
-            ax.scatter(
-                x_points[-1], z_points[-1], c="r", marker="o", s=100, label="Конец"
-            )
-
-            ax.set_xlabel("X")
-            ax.set_ylabel("Z")
-            ax.grid(True)
-            ax.set_title("Траектория камеры (вид сверху, плоскость X-Z)")
-            ax.legend()
-
+            fig = plt.figure(figsize=(12, 10))
+            
+            positions = []
+            for pose in self.trajectory:
+                if pose.rotation_matrix is not None:
+                    # Вектор позиции
+                    t = pose.rotation_matrix[:3, 3]
+                    # ORB-SLAM3 использует инвертированную матрицу Tcw (камера -> мир)
+                    # Преобразование в Twc (мир -> камера)
+                    R = pose.rotation_matrix[:3, :3]
+                    camera_pos = -np.dot(R.T, t)
+                    positions.append(camera_pos)
+            
+            if positions:
+                positions = np.array(positions)
+                
+                ax1 = fig.add_subplot(221)
+                ax1.plot(positions[:, 0], positions[:, 2], 'r-')
+                ax1.set_title('Проекция X-Z (вид сверху)')
+                ax1.set_xlabel('X')
+                ax1.set_ylabel('Z')
+                
+                ax2 = fig.add_subplot(222)
+                ax2.plot(positions[:, 0], positions[:, 1], 'g-')
+                ax2.set_title('Проекция X-Y (фронтальный вид)')
+                ax2.set_xlabel('X')
+                ax2.set_ylabel('Y')
+                
+                ax3 = fig.add_subplot(223)
+                ax3.plot(positions[:, 2], positions[:, 1], 'b-')
+                ax3.set_title('Проекция Z-Y (боковой вид)')
+                ax3.set_xlabel('Z')
+                ax3.set_ylabel('Y')
+                
+                ax4 = fig.add_subplot(224, projection='3d')
+                ax4.plot3D(positions[:, 0], positions[:, 2], positions[:, 1])
+                ax4.set_title('3D траектория')
+                ax4.set_xlabel('X')
+                ax4.set_ylabel('Z')
+                ax4.set_zlabel('Y')
+            
+            plt.tight_layout()
             plt.savefig(output_path)
             plt.close()
-
-            logging.info("Траектория камеры сохранена в %s", output_path)
-
         except Exception as e:
-            logging.error("Ошибка при построении траектории: %s", e)
+            logging.error(f"Ошибка при построении траектории: {e}")
 
 
 def main():
