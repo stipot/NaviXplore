@@ -9,6 +9,7 @@ import time
 import zmq
 import signal
 import threading
+import json
 
 
 DEFAULT_PORT = 5555
@@ -92,7 +93,17 @@ class DatasetPlayer:
                     continue
 
                 _, jpeg_buffer = cv2.imencode(".jpg", frame)
+                
+                message_data = {
+                    "timestamp": self.timestamps[i],
+                    "frame_id": i
+                }
+                
+                message_json = json.dumps(message_data)
+                self.socket.send_string(message_json, zmq.SNDMORE)
                 self.socket.send(jpeg_buffer.tobytes())
+                
+                logging.debug(f"Отправлен кадр {i} с timestamp {message_data['timestamp']}")
 
                 cv2.imshow("Playback", frame)
                 key = cv2.waitKey(1) & 0xFF

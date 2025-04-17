@@ -1,19 +1,27 @@
 #!/usr/bin/env python
 
-import zmq
 import json
 import time
 import argparse
 import logging
 import signal
 import os
-import sys
-import cv2
-import numpy as np
 import threading
-from typing import List, Dict, Any, Optional, Tuple, Callable
+from typing import List, Optional, Tuple, Callable
 from collections import deque
 from dataclasses import dataclass
+import cv2
+import numpy as np
+import zmq
+import matplotlib
+import matplotlib.pyplot as plt
+import locale
+
+
+matplotlib.set_loglevel("WARNING")
+logging.getLogger("matplotlib").setLevel(logging.WARNING)
+logging.getLogger("PIL").setLevel(logging.WARNING)
+logging.getLogger("fontTools").setLevel(logging.WARNING)
 
 
 @dataclass
@@ -32,38 +40,55 @@ class KeyPoint:
     world_z: Optional[float] = None
 
 
-class ORBFeatureReceiver:
-    """Класс для приема и обработки данных ORB-SLAM3"""
+@dataclass
+class CameraPose:
+    """Класс для хранения положения и ориентации камеры"""
 
-    def __init__(self, features_port: int, max_buffer_size: int = 10):
-        """Инициализация получателя данных о ключевых точках"""
-        self.features_port = features_port
+    timestamp: float
+    tx: float
+    ty: float
+    tz: float
+    rotation_matrix: Optional[np.ndarray] = None
+
+    @property
+    def position(self) -> np.ndarray:
+        """Возвращает позицию камеры как numpy массив"""
+        return np.array([self.tx, self.ty, self.tz])
+
+
+class ORBDataReceiver:
+    """Класс для приема всех данных от ORB-SLAM3: изображений, позиции камеры и точек"""
+
+    def __init__(self, data_port: int, max_buffer_size: int = 10):
+        """Инициализация получателя всех данных от ORB-SLAM3"""
+        self.data_port = data_port
         self.max_buffer_size = max_buffer_size
 
         self.frames_buffer = deque(maxlen=max_buffer_size)
         self.timestamps_buffer = deque(maxlen=max_buffer_size)
+        self.poses_buffer = deque(maxlen=max_buffer_size)
 
         self.context = zmq.Context()
-        self.features_socket = self.context.socket(zmq.SUB)
-        self.features_socket.bind(f"tcp://*:{self.features_port}")
-        self.features_socket.setsockopt_string(zmq.SUBSCRIBE, "")
-        self.features_socket.setsockopt(zmq.RCVTIMEO, 1000)  # 1 секунда
+        self.data_socket = self.context.socket(zmq.SUB)
+        self.data_socket.bind(f"tcp://*:{self.data_port}")
+        self.data_socket.setsockopt_string(zmq.SUBSCRIBE, "")
+        self.data_socket.setsockopt(zmq.RCVTIMEO, 1000)  # 1 секунда
 
         self.running = False
         self.thread = None
 
-        self.feature_callbacks = []
+        self.callbacks = []
 
-        logging.info(f"ORBFeatureReceiver инициализирован на порту {features_port}")
+        logging.info("ORBDataReceiver инициализирован на порту %d", data_port)
 
     def start(self):
         """Запуск приема данных в отдельном потоке"""
         if self.thread is None or not self.thread.is_alive():
             self.running = True
-            self.thread = threading.Thread(target=self._receive_features_loop)
+            self.thread = threading.Thread(target=self._receive_data_loop)
             self.thread.daemon = True
             self.thread.start()
-            logging.info("Запущен поток приема данных о ключевых точках")
+            logging.info("Запущен поток приема данных от ORB-SLAM3")
 
     def stop(self):
         """Остановка приема данных"""
@@ -72,52 +97,84 @@ class ORBFeatureReceiver:
             self.thread.join(timeout=2.0)
             logging.info("Поток приема данных остановлен")
 
-        self.features_socket.close()
+        self.data_socket.close()
         self.context.term()
         logging.info("Ресурсы ZMQ освобождены")
 
     def register_callback(
-        self, callback: Callable[[float, np.ndarray, List[KeyPoint]], None]
+        self,
+        callback: Callable[
+            [float, np.ndarray, Optional[CameraPose], List[KeyPoint]], None
+        ],
     ):
         """Регистрация функции обратного вызова для обработки новых данных"""
-        self.feature_callbacks.append(callback)
+        self.callbacks.append(callback)
         logging.info(
-            f"Зарегистрирован новый обработчик данных (всего {len(self.feature_callbacks)})"
+            "Зарегистрирован новый обработчик данных (всего %d)", len(self.callbacks)
         )
 
     def _decode_image_from_hex(self, hex_string):
         """Декодирование изображения из hex-строки"""
         try:
             binary_data = bytes.fromhex(hex_string)
-
             img = cv2.imdecode(
                 np.frombuffer(binary_data, dtype=np.uint8), cv2.IMREAD_COLOR
             )
             return img
         except Exception as e:
-            logging.error(f"Ошибка декодирования изображения: {e}")
+            logging.error("Ошибка декодирования изображения: %s", e)
             return None
 
-    def _receive_features_loop(self):
-        """Основной цикл приема данных о ключевых точках"""
+    def _receive_data_loop(self):
+        """Основной цикл приема всех данных от ORB-SLAM3"""
         while self.running:
             try:
-                message = self.features_socket.recv_string()
+                message = self.data_socket.recv_string()
                 try:
                     data = json.loads(message)
                 except json.JSONDecodeError as e:
-                    logging.error(f"Ошибка декодирования JSON: {e}")
-                    logging.debug(f"Полученное сообщение: {message[:100]}...")
+                    logging.error("Ошибка декодирования JSON: %s", e)
+                    logging.debug("Полученное сообщение: %s...", message[:100])
                     continue
 
                 timestamp = data.get("timestamp")
-                num_points = data.get("num_points", 0)
+                tracking_status = data.get("tracking_status", "UNKNOWN")
+
+                timestamp_str = str(int(timestamp))
 
                 img = None
                 if "image_data" in data:
                     img = self._decode_image_from_hex(data["image_data"])
                     if img is None:
                         logging.warning("Не удалось декодировать изображение")
+
+                pose = None
+                if "pose" in data and tracking_status == "OK":
+                    try:
+                        pose_data = data["pose"]
+                        pose_matrix = None
+
+                        if "pose_matrix" in data:
+                            matrix_data = data["pose_matrix"]
+                            if len(matrix_data) == 16:  # 4x4
+                                pose_matrix = np.array(matrix_data).reshape(4, 4)
+
+                        pose = CameraPose(
+                            timestamp=timestamp,
+                            tx=pose_data.get("tx"),
+                            ty=pose_data.get("ty"),
+                            tz=pose_data.get("tz"),
+                            rotation_matrix=pose_matrix,
+                        )
+                        self.poses_buffer.append(pose)
+                        logging.debug(
+                            "Получены данные о позиции: %.2f, %.2f, %.2f",
+                            pose.tx,
+                            pose.ty,
+                            pose.tz,
+                        )
+                    except Exception as e:
+                        logging.error("Ошибка обработки данных о позиции: %s", e)
 
                 points = []
                 for point_data in data.get("points", []):
@@ -135,35 +192,51 @@ class ORBFeatureReceiver:
                         )
                         points.append(kp)
                     except Exception as e:
-                        logging.error(f"Ошибка обработки точки: {e}")
+                        logging.error("Ошибка обработки точки: %s", e)
 
                 if img is not None and timestamp is not None:
                     self.frames_buffer.append((timestamp, img, points))
                     self.timestamps_buffer.append(timestamp)
 
-                    for callback in self.feature_callbacks:
+                    for callback in self.callbacks:
                         try:
-                            callback(timestamp, img, points)
+                            callback(timestamp, img, pose, points)
                         except Exception as e:
-                            logging.error(f"Ошибка в обработчике: {e}")
+                            logging.error("Ошибка в обработчике: %s", e)
 
                 logging.info(
-                    f"Получены данные: timestamp={timestamp}, точек={num_points}"
+                    "Получены данные: timestamp=%s, статус=%s, точек=%d",
+                    timestamp_str,
+                    tracking_status,
+                    len(points),
                 )
+                if pose:
+                    logging.info(
+                        "Позиция камеры: x=%.2f, y=%.2f, z=%.2f",
+                        pose.tx,
+                        pose.ty,
+                        pose.tz,
+                    )
 
             except zmq.Again:
                 continue
             except zmq.ZMQError as e:
-                logging.error(f"Ошибка ZMQ: {e}")
+                logging.error("Ошибка ZMQ: %s", e)
                 break
             except Exception as e:
-                logging.error(f"Непредвиденная ошибка: {e}")
+                logging.error("Непредвиденная ошибка: %s", e)
                 logging.exception(e)
 
     def get_latest_frame(self) -> Optional[Tuple[float, np.ndarray, List[KeyPoint]]]:
         """Получение последнего принятого кадра с точками"""
         if self.frames_buffer:
             return self.frames_buffer[-1]
+        return None
+
+    def get_latest_pose(self) -> Optional[CameraPose]:
+        """Получение последней позиции камеры"""
+        if self.poses_buffer:
+            return self.poses_buffer[-1]
         return None
 
     def get_frame_by_timestamp(
@@ -173,6 +246,15 @@ class ORBFeatureReceiver:
         for ts, img, points in self.frames_buffer:
             if abs(ts - timestamp) < tolerance:
                 return (ts, img, points)
+        return None
+
+    def get_pose_by_timestamp(
+        self, timestamp: float, tolerance: float = 0.05
+    ) -> Optional[CameraPose]:
+        """Получение позиции камеры по временной метке с указанной погрешностью"""
+        for pose in self.poses_buffer:
+            if abs(pose.timestamp - timestamp) < tolerance:
+                return pose
         return None
 
 
@@ -191,19 +273,29 @@ class DebugVisualizer:
         self.points_log = []
         self.last_frame = None
         self.last_points = None
+        self.last_pose = None
+        self.trajectory = []
 
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
-            logging.info(f"Создана директория для отладочных данных: {output_dir}")
+            logging.info("Создана директория для отладочных данных: %s", output_dir)
 
         self.points_log_file = os.path.join(output_dir, "points_log.csv")
-        with open(self.points_log_file, "w") as f:
+        with open(self.points_log_file, "w", encoding="utf-8") as f:
             f.write("timestamp,point_id,image_x,image_y,world_x,world_y,world_z\n")
 
-        logging.info(f"Отладочный визуализатор инициализирован, вывод в {output_dir}")
+        self.trajectory_log_file = os.path.join(output_dir, "trajectory.csv")
+        with open(self.trajectory_log_file, "w", encoding="utf-8") as f:
+            f.write("timestamp,tx,ty,tz\n")
+
+        logging.info("Отладочный визуализатор инициализирован, вывод в %s", output_dir)
 
     def process_frame(
-        self, timestamp: float, image: np.ndarray, points: List[KeyPoint]
+        self,
+        timestamp: float,
+        image: np.ndarray,
+        pose: Optional[CameraPose],
+        points: List[KeyPoint],
     ):
         """
         Обработка нового кадра и точек с сохранением отладочной информации
@@ -211,6 +303,7 @@ class DebugVisualizer:
         Args:
             timestamp: Временная метка кадра
             image: Изображение
+            pose: Позиция и ориентация камеры
             points: Список ключевых точек
         """
         if image is None:
@@ -219,10 +312,18 @@ class DebugVisualizer:
 
         self.last_frame = image.copy()
         self.last_points = points
+        self.last_pose = pose
+        if pose:
+            self.trajectory.append(pose)
+
+            with open(self.trajectory_log_file, "a", encoding="utf-8") as f:
+                f.write(f"{timestamp},{pose.tx},{pose.ty},{pose.tz}\n")
+
         self.frame_counter += 1
+        timestamp_str = str(int(timestamp))
 
         frame_filename = os.path.join(
-            self.output_dir, f"frame_{self.frame_counter:06d}_{timestamp:.3f}.jpg"
+            self.output_dir, f"frame_{self.frame_counter:06d}_{timestamp_str}.jpg"
         )
 
         debug_frame = self.last_frame.copy()
@@ -230,13 +331,32 @@ class DebugVisualizer:
         self._save_points_data(timestamp, points)
         self._visualize_points_on_frame(debug_frame, points)
 
+        # Russian info visualization patch
+        pose_text = "No data about position"
+        # pose_text = "Нет данных о позиции"
+        if pose:
+            # Russian info visualization patch
+            pose_text = f"Pos: {pose.tx:.2f}, {pose.ty:.2f}, {pose.tz:.2f}"
+            # pose_text = f"Поз: {pose.tx:.2f}, {pose.ty:.2f}, {pose.tz:.2f}"
+
         cv2.putText(
             debug_frame,
-            f"Frame: {self.frame_counter}, TS: {timestamp:.3f}, Points: {len(points)}",
+            # Russian info visualization patch
+            f"Frame: {self.frame_counter}, TS: {timestamp_str}, Points: {len(points)}",
+            # f"Кадр: {self.frame_counter}, TS: {timestamp_str}, Точек: {len(points)}",
             (10, 30),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.7,
             (0, 0, 255),
+            2,
+        )
+        cv2.putText(
+            debug_frame,
+            pose_text,
+            (10, 60),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (0, 255, 0),
             2,
         )
 
@@ -247,9 +367,8 @@ class DebugVisualizer:
             cv2.waitKey(1)
 
         logging.info(
-            f"[DEBUG] Сохранен отладочный кадр {self.frame_counter}, точек: {len(points)}"
+            "Сохранен отладочный кадр %d, точек: %d", self.frame_counter, len(points)
         )
-
         self._print_points_info(timestamp, points, max_points=5)
 
     def _save_points_data(self, timestamp: float, points: List[KeyPoint]):
@@ -260,7 +379,7 @@ class DebugVisualizer:
             timestamp: Временная метка кадра
             points: Список ключевых точек
         """
-        with open(self.points_log_file, "a") as f:
+        with open(self.points_log_file, "a", encoding="utf-8") as f:
             for i, point in enumerate(points):
                 if point.world_x is not None:
                     f.write(
@@ -322,7 +441,7 @@ class DebugVisualizer:
                         cv2.line(frame, (x, y), (x, y - 15), color, 1)
                         cv2.circle(frame, (x, y - 15), 2, color, -1)
             except Exception as e:
-                logging.error(f"Ошибка при отрисовке точки {i}: {e}")
+                logging.error("Ошибка при отрисовке точки %d: %s", i, e)
 
     def _print_points_info(
         self, timestamp: float, points: List[KeyPoint], max_points: int = 5
@@ -335,18 +454,22 @@ class DebugVisualizer:
             points: Список ключевых точек
             max_points: Максимальное количество точек для вывода
         """
+        timestamp_str = str(int(timestamp))
+
         logging.info(
-            f"[DEBUG] === Отладочный вывод точек для кадра {self.frame_counter}, TS: {timestamp:.3f} ==="
+            "Отладочный вывод точек для кадра %d, TS: %s",
+            self.frame_counter,
+            timestamp_str,
         )
 
         valid_points = [p for p in points if p.world_x is not None]
 
         if not valid_points:
-            logging.info("[DEBUG] Нет точек с 3D координатами")
+            logging.info("Нет точек с 3D координатами")
             return
 
         logging.info(
-            f"[DEBUG] Всего точек с 3D координатами: {len(valid_points)}/{len(points)}"
+            "Всего точек с 3D координатами: %d/%d", len(valid_points), len(points)
         )
 
         sorted_points = sorted(
@@ -354,25 +477,30 @@ class DebugVisualizer:
             key=lambda p: p.world_z if p.world_z is not None else float("inf"),
         )
 
-        logging.info("[DEBUG] Ближайшие точки:")
+        logging.info("Ближайшие точки:")
         for i, point in enumerate(sorted_points[:max_points]):
             logging.info(
-                f"[DEBUG] Точка {i}: "
-                f"Экран: ({point.image_x:.1f}, {point.image_y:.1f}), "
-                f"Мир: ({point.world_x:.2f}, {point.world_y:.2f}, {point.world_z:.2f}), "
-                f"Размер: {point.size:.1f}, Угол: {point.angle:.1f}°"
+                "Точка %d: Экран: (%.1f, %.1f), Мир: (%.2f, %.2f, %.2f), Размер: %.1f, Угол: %.1f°",
+                i,
+                point.image_x,
+                point.image_y,
+                point.world_x,
+                point.world_y,
+                point.world_z,
+                point.size,
+                point.angle,
             )
 
         depths = [p.world_z for p in valid_points if p.world_z is not None]
         if depths:
             logging.info(
-                f"[DEBUG] Статистика глубины - "
-                f"Мин: {min(depths):.2f}, "
-                f"Макс: {max(depths):.2f}, "
-                f"Среднее: {sum(depths)/len(depths):.2f}"
+                "Статистика глубины - Мин: %.2f, Макс: %.2f, Среднее: %.2f",
+                min(depths),
+                max(depths),
+                sum(depths) / len(depths),
             )
 
-        logging.info("[DEBUG] ======================================================")
+        logging.info("======================================================")
 
     def generate_report(self):
         """Генерация HTML-отчета с отладочной информацией"""
@@ -422,22 +550,66 @@ class DebugVisualizer:
             """
             )
 
-        logging.info(f"[DEBUG] Сгенерирован HTML-отчет: {report_path}")
+        if len(self.trajectory) > 0:
+            fig_path = os.path.join(self.output_dir, "trajectory.png")
+            self._plot_trajectory(fig_path)
+
+            with open(report_path, "a", encoding="utf-8") as f:
+                f.write(
+                    """
+                <div class="frame-container">
+                    <h2>Траектория камеры</h2>
+                    <img src="trajectory.png" alt="Camera Trajectory">
+                </div>
+                """
+                )
+
         return report_path
+
+    def _plot_trajectory(self, output_path):
+        """Создает и сохраняет график траектории камеры в 2D"""
+        if len(self.trajectory) < 2:
+            logging.warning("Недостаточно данных для построения траектории")
+            return
+
+        try:
+            fig = plt.figure(figsize=(10, 8))
+            ax = fig.add_subplot(111)
+
+            x_points = [pose.tx for pose in self.trajectory]
+            # Z вместо Y для отображения траектории в плоскости движения X-Z
+            z_points = [pose.tz for pose in self.trajectory]
+
+            ax.plot(x_points, z_points, "b-", label="Траектория камеры")
+            ax.scatter(
+                x_points[0], z_points[0], c="g", marker="o", s=100, label="Старт"
+            )
+            ax.scatter(
+                x_points[-1], z_points[-1], c="r", marker="o", s=100, label="Конец"
+            )
+
+            ax.set_xlabel("X")
+            ax.set_ylabel("Z")
+            ax.grid(True)
+            ax.set_title("Траектория камеры (вид сверху, плоскость X-Z)")
+            ax.legend()
+
+            plt.savefig(output_path)
+            plt.close()
+
+            logging.info("Траектория камеры сохранена в %s", output_path)
+
+        except Exception as e:
+            logging.error("Ошибка при построении траектории: %s", e)
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Получение и обработка данных ORB-SLAM3"
-    )
+    parser = argparse.ArgumentParser(description="Прием данных от ORB-SLAM3")
     parser.add_argument(
-        "--features-port",
+        "--data-port",
         type=int,
         default=5557,
-        help="Порт для приема данных о точках (по умолчанию 5557)",
-    )
-    parser.add_argument(
-        "--visualize", action="store_true", help="Включить визуализацию"
+        help="Порт для приема всех данных (по умолчанию 5557)",
     )
     parser.add_argument("--debug", action="store_true", help="Включить режим отладки")
     parser.add_argument(
@@ -448,6 +620,8 @@ def main():
     )
     args = parser.parse_args()
 
+    locale.setlocale(locale.LC_ALL, "")
+
     log_level = logging.DEBUG if args.debug else logging.INFO
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s: %(message)s", level=log_level
@@ -455,29 +629,49 @@ def main():
 
     running = True
 
-    def signal_handler(sig, frame):
+    def signal_handler(_sig, _frame):
         nonlocal running
         logging.info("Получен сигнал завершения...")
         running = False
 
     signal.signal(signal.SIGINT, signal_handler)
 
-    receiver = ORBFeatureReceiver(features_port=args.features_port)
+    receiver = ORBDataReceiver(data_port=args.data_port)
 
     debug_visualizer = None
     if args.debug:
         debug_visualizer = DebugVisualizer(output_dir=args.debug_output)
         receiver.register_callback(debug_visualizer.process_frame)
-        logging.info(f"Запущен отладочный режим, вывод в {args.debug_output}")
+        logging.info("Запущен отладочный режим, вывод в %s", args.debug_output)
 
-    def example_processor(timestamp, image, points):
+    def example_processor(timestamp, image, pose, points):
         """Обработчик данных"""
-        logging.info(f"Обработка кадра {timestamp} с {len(points)} точками")
-        for i, point in enumerate(points[:3], 1):
-            if point.world_x is not None:
+        timestamp_str = str(int(timestamp))
+        logging.info("Обработка кадра %s с %d точками", timestamp_str, len(points))
+        if pose:
+            logging.info(
+                "Позиция камеры: x=%.2f, y=%.2f, z=%.2f", pose.tx, pose.ty, pose.tz
+            )
+
+        valid_points = [p for p in points if p.world_x is not None]
+        if valid_points:
+            logging.info(
+                "Точек с 3D координатами: %d/%d", len(valid_points), len(points)
+            )
+
+            sorted_points = sorted(
+                valid_points,
+                key=lambda p: p.world_z if p.world_z is not None else float("inf"),
+            )
+            for i, point in enumerate(sorted_points[:3]):
                 logging.debug(
-                    f"Точка {i}: изображение ({point.image_x:.1f}, {point.image_y:.1f}), "
-                    f"мир ({point.world_x:.2f}, {point.world_y:.2f}, {point.world_z:.2f})"
+                    "Точка %d: Экран (%.1f, %.1f), Мир (%.2f, %.2f, %.2f)",
+                    i,
+                    point.image_x,
+                    point.image_y,
+                    point.world_x,
+                    point.world_y,
+                    point.world_z,
                 )
 
     receiver.register_callback(example_processor)
@@ -495,7 +689,7 @@ def main():
 
         if debug_visualizer:
             report_path = debug_visualizer.generate_report()
-            logging.info(f"Сгенерирован отчет: {report_path}")
+            logging.info("Сгенерирован отчет: %s", report_path)
 
         cv2.destroyAllWindows()
 
