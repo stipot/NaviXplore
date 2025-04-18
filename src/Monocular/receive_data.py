@@ -35,32 +35,20 @@ class KeyPoint:
     response: float
     octave: int
 
-    world_x: Optional[float] = None
-    world_y: Optional[float] = None
-    world_z: Optional[float] = None
+    x: Optional[float] = None
+    y: Optional[float] = None
+    z: Optional[float] = None
 
 
 @dataclass
 class CameraPose:
-    """Класс для хранения положения и ориентации камеры"""
+    """Класс для хранения положения и ориентации камеры в мировой системе координат"""
 
     timestamp: float
-    tx: float
-    ty: float
-    tz: float
+    x: float
+    y: float
+    z: float
     rotation_matrix: Optional[np.ndarray] = None
-
-    @property
-    def position(self) -> np.ndarray:
-        """Возвращает позицию камеры в мировой системе координат как numpy массив"""
-        if self.rotation_matrix is not None:
-            # Матрица вращения и вектор позиции
-            R = self.rotation_matrix[:3, :3]
-            t = np.array([self.tx, self.ty, self.tz])
-            # Преобразование позиции в мировую систему координат
-            return -np.dot(R.T, t)
-        else:
-            return np.array([self.tx, self.ty, self.tz])
 
 
 class ORBDataReceiver:
@@ -156,29 +144,42 @@ class ORBDataReceiver:
                         logging.warning("Не удалось декодировать изображение")
 
                 pose = None
+                pose_matrix = None
                 if "pose" in data and tracking_status == "OK":
                     try:
                         pose_data = data["pose"]
-                        pose_matrix = None
-
+                        
+                        tx = pose_data.get("tx")
+                        ty = pose_data.get("ty")
+                        tz = pose_data.get("tz")
+                        
+                        # Матрица преобразования
                         if "pose_matrix" in data:
                             matrix_data = data["pose_matrix"]
                             if len(matrix_data) == 16:  # 4x4
                                 pose_matrix = np.array(matrix_data).reshape(4, 4)
+                                
+                                R = pose_matrix[:3, :3]
+                                t = np.array([tx, ty, tz])
+                                world_pos = -np.dot(R.T, t)
+                                x, y, z = world_pos
+                            else:
+                                x, y, z = tx, ty, tz
+                        else:
+                            x, y, z = tx, ty, tz
 
                         pose = CameraPose(
                             timestamp=timestamp,
-                            tx=pose_data.get("tx"),
-                            ty=pose_data.get("ty"),
-                            tz=pose_data.get("tz"),
+                            x=x,
+                            y=y,
+                            z=z,
                             rotation_matrix=pose_matrix,
                         )
                         self.poses_buffer.append(pose)
+                        
                         logging.debug(
-                            "Получены данные о позиции: %.2f, %.2f, %.2f",
-                            pose.tx,
-                            pose.ty,
-                            pose.tz,
+                            "Получены данные о позиции: исходные (%.2f, %.2f, %.2f), мировые (%.2f, %.2f, %.2f)",
+                            tx, ty, tz, x, y, z
                         )
                     except Exception as e:
                         logging.error("Ошибка обработки данных о позиции: %s", e)
@@ -186,18 +187,23 @@ class ORBDataReceiver:
                 points = []
                 for point_data in data.get("points", []):
                     try:
-                        kp = KeyPoint(
-                            image_x=point_data.get("image_x"),
-                            image_y=point_data.get("image_y"),
-                            size=point_data.get("size"),
-                            angle=point_data.get("angle"),
-                            response=point_data.get("response"),
-                            octave=point_data.get("octave"),
-                            world_x=point_data.get("world_x"),
-                            world_y=point_data.get("world_y"),
-                            world_z=point_data.get("world_z"),
-                        )
-                        points.append(kp)
+                        world_x = point_data.get("world_x")
+                        world_y = point_data.get("world_y")
+                        world_z = point_data.get("world_z")
+                        
+                        if world_x is not None and world_y is not None and world_z is not None:
+                            kp = KeyPoint(
+                                image_x=point_data.get("image_x"),
+                                image_y=point_data.get("image_y"),
+                                size=point_data.get("size"),
+                                angle=point_data.get("angle"),
+                                response=point_data.get("response"),
+                                octave=point_data.get("octave"),
+                                x=world_x,
+                                y=world_y,
+                                z=world_z,
+                            )
+                            points.append(kp)
                     except Exception as e:
                         logging.error("Ошибка обработки точки: %s", e)
 
@@ -219,10 +225,8 @@ class ORBDataReceiver:
                 )
                 if pose:
                     logging.info(
-                        "Позиция камеры: x=%.2f, y=%.2f, z=%.2f",
-                        pose.tx,
-                        pose.ty,
-                        pose.tz,
+                        "Позиция камеры (мировая): x=%.2f, y=%.2f (высота), z=%.2f",
+                        pose.x, pose.y, pose.z
                     )
 
             except zmq.Again:
@@ -282,6 +286,7 @@ class DebugVisualizer:
         self.last_points = None
         self.last_pose = None
         self.trajectory = []
+        self.all_points = set()
 
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
@@ -289,11 +294,11 @@ class DebugVisualizer:
 
         self.points_log_file = os.path.join(output_dir, "points_log.csv")
         with open(self.points_log_file, "w", encoding="utf-8") as f:
-            f.write("timestamp,point_id,image_x,image_y,world_x,world_y,world_z\n")
+            f.write("timestamp,point_id,image_x,image_y,x,y,z\n")
 
         self.trajectory_log_file = os.path.join(output_dir, "trajectory.csv")
         with open(self.trajectory_log_file, "w", encoding="utf-8") as f:
-            f.write("timestamp,tx,ty,tz\n")
+            f.write("timestamp,x,y,z\n")
 
         logging.info("Отладочный визуализатор инициализирован, вывод в %s", output_dir)
 
@@ -324,7 +329,12 @@ class DebugVisualizer:
             self.trajectory.append(pose)
 
             with open(self.trajectory_log_file, "a", encoding="utf-8") as f:
-                f.write(f"{str(int(timestamp))},{pose.tx},{pose.ty},{pose.tz}\n")
+                f.write(f"{str(int(timestamp))},{pose.x},{pose.y},{pose.z}\n")
+
+        for point in points:
+            if point.x is not None:
+                point_key = (point.x, point.y, point.z)
+                self.all_points.add(point_key)
 
         self.frame_counter += 1
         timestamp_str = str(int(timestamp))
@@ -338,19 +348,13 @@ class DebugVisualizer:
         self._save_points_data(timestamp, points)
         self._visualize_points_on_frame(debug_frame, points)
 
-        # Russian info visualization patch
         pose_text = "No data about position"
-        # pose_text = "Нет данных о позиции"
         if pose:
-            # Russian info visualization patch
-            pose_text = f"Pos: {pose.tx:.2f}, {pose.ty:.2f}, {pose.tz:.2f}"
-            # pose_text = f"Поз: {pose.tx:.2f}, {pose.ty:.2f}, {pose.tz:.2f}"
+            pose_text = f"Pos: {pose.x:.2f}, {pose.y:.2f}, {pose.z:.2f}"
 
         cv2.putText(
             debug_frame,
-            # Russian info visualization patch
             f"Frame: {self.frame_counter}, TS: {timestamp_str}, Points: {len(points)}",
-            # f"Кадр: {self.frame_counter}, TS: {timestamp_str}, Точек: {len(points)}",
             (10, 30),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.7,
@@ -388,10 +392,10 @@ class DebugVisualizer:
         """
         with open(self.points_log_file, "a", encoding="utf-8") as f:
             for i, point in enumerate(points):
-                if point.world_x is not None:
+                if point.x is not None:
                     f.write(
                         f"{str(int(timestamp))},{i},{point.image_x},{point.image_y},"
-                        f"{point.world_x},{point.world_y},{point.world_z}\n"
+                        f"{point.x},{point.y},{point.z}\n"
                     )
 
     def _visualize_points_on_frame(self, frame: np.ndarray, points: List[KeyPoint]):
@@ -405,9 +409,9 @@ class DebugVisualizer:
         min_depth, max_depth = float("inf"), -float("inf")
 
         for point in points:
-            if point.world_z is not None:
-                min_depth = min(min_depth, point.world_z)
-                max_depth = max(max_depth, point.world_z)
+            if point.z is not None:
+                min_depth = min(min_depth, point.z)
+                max_depth = max(max_depth, point.z)
 
         if min_depth == float("inf"):
             min_depth, max_depth = 0, 1
@@ -419,8 +423,8 @@ class DebugVisualizer:
                 x, y = int(point.image_x), int(point.image_y)
 
                 if 0 <= x < frame.shape[1] and 0 <= y < frame.shape[0]:
-                    if point.world_z is not None:
-                        normalized_depth = (point.world_z - min_depth) / depth_range
+                    if point.z is not None:
+                        normalized_depth = (point.z - min_depth) / depth_range
                         color = (
                             int(255 * (1 - normalized_depth)),  # B
                             0,  # G
@@ -440,11 +444,7 @@ class DebugVisualizer:
                         1,
                     )
 
-                    if (
-                        point.world_x is not None
-                        and point.world_y is not None
-                        and point.world_z is not None
-                    ):
+                    if point.x is not None and point.y is not None and point.z is not None:
                         cv2.line(frame, (x, y), (x, y - 15), color, 1)
                         cv2.circle(frame, (x, y - 15), 2, color, -1)
             except Exception as e:
@@ -469,7 +469,7 @@ class DebugVisualizer:
             timestamp_str,
         )
 
-        valid_points = [p for p in points if p.world_x is not None]
+        valid_points = [p for p in points if p.x is not None]
 
         if not valid_points:
             logging.info("Нет точек с 3D координатами")
@@ -481,7 +481,7 @@ class DebugVisualizer:
 
         sorted_points = sorted(
             valid_points,
-            key=lambda p: p.world_z if p.world_z is not None else float("inf"),
+            key=lambda p: p.z if p.z is not None else float("inf"),
         )
 
         logging.info("Ближайшие точки:")
@@ -491,14 +491,14 @@ class DebugVisualizer:
                 i,
                 point.image_x,
                 point.image_y,
-                point.world_x,
-                point.world_y,
-                point.world_z,
+                point.x,
+                point.y,
+                point.z,
                 point.size,
                 point.angle,
             )
 
-        depths = [p.world_z for p in valid_points if p.world_z is not None]
+        depths = [p.z for p in valid_points if p.z is not None]
         if depths:
             logging.info(
                 "Статистика глубины - Мин: %.2f, Макс: %.2f, Среднее: %.2f",
@@ -560,6 +560,9 @@ class DebugVisualizer:
         if len(self.trajectory) > 0:
             fig_path = os.path.join(self.output_dir, "trajectory.png")
             self._plot_trajectory(fig_path)
+            
+            points_3d_path = os.path.join(self.output_dir, "points_3d.png")
+            self._plot_points_3d(points_3d_path)
 
             with open(report_path, "a", encoding="utf-8") as f:
                 f.write(
@@ -568,13 +571,17 @@ class DebugVisualizer:
                     <h2>Траектория камеры</h2>
                     <img src="trajectory.png" alt="Camera Trajectory">
                 </div>
+                <div class="frame-container">
+                    <h2>3D карта точек</h2>
+                    <img src="points_3d.png" alt="3D Map Points">
+                </div>
                 """
                 )
 
         return report_path
 
     def _plot_trajectory(self, output_path):
-        """Создает и сохраняет график траектории камеры с правильной интерпретацией координат"""
+        """Создает и сохраняет график траектории камеры с учетом системы координат ORB-SLAM3"""
         if len(self.trajectory) < 2:
             return
             
@@ -583,14 +590,7 @@ class DebugVisualizer:
             
             positions = []
             for pose in self.trajectory:
-                if pose.rotation_matrix is not None:
-                    # Вектор позиции
-                    t = pose.rotation_matrix[:3, 3]
-                    # ORB-SLAM3 использует инвертированную матрицу Tcw (камера -> мир)
-                    # Преобразование в Twc (мир -> камера)
-                    R = pose.rotation_matrix[:3, :3]
-                    camera_pos = -np.dot(R.T, t)
-                    positions.append(camera_pos)
+                positions.append([pose.x, pose.y, pose.z])
             
             if positions:
                 positions = np.array(positions)
@@ -603,15 +603,15 @@ class DebugVisualizer:
                 
                 ax2 = fig.add_subplot(222)
                 ax2.plot(positions[:, 0], positions[:, 1], 'g-')
-                ax2.set_title('Проекция X-Y (фронтальный вид)')
+                ax2.set_title('Проекция X-Y (вид спереди)')
                 ax2.set_xlabel('X')
-                ax2.set_ylabel('Y')
+                ax2.set_ylabel('Y (высота)')
                 
                 ax3 = fig.add_subplot(223)
                 ax3.plot(positions[:, 2], positions[:, 1], 'b-')
-                ax3.set_title('Проекция Z-Y (боковой вид)')
+                ax3.set_title('Проекция Z-Y (вид сбоку)')
                 ax3.set_xlabel('Z')
-                ax3.set_ylabel('Y')
+                ax3.set_ylabel('Y (высота)')
                 
                 ax4 = fig.add_subplot(224, projection='3d')
                 ax4.plot3D(positions[:, 0], positions[:, 2], positions[:, 1])
@@ -625,6 +625,69 @@ class DebugVisualizer:
             plt.close()
         except Exception as e:
             logging.error(f"Ошибка при построении траектории: {e}")
+
+    def _plot_points_3d(self, output_path):
+        """Создает и сохраняет 3D график всех точек с путем камеры"""
+        if not self.trajectory or not self.all_points:
+            return
+            
+        try:
+            fig = plt.figure(figsize=(12, 10))
+            ax = fig.add_subplot(111, projection='3d')
+            
+            positions = np.array([[pose.x, pose.y, pose.z] for pose in self.trajectory])
+            if len(positions) > 0:
+                ax.plot3D(
+                    positions[:, 0], 
+                    positions[:, 2],
+                    positions[:, 1],
+                    'r-', linewidth=2, label='Camera Path'
+                )
+                
+                last_camera_pos = positions[-1]
+            else:
+                last_camera_pos = np.array([0, 0, 0])
+            
+            if self.all_points:
+                point_positions = np.array(list(self.all_points))
+
+                max_distance = 7.0
+                distances = np.sqrt(np.sum((point_positions - last_camera_pos)**2, axis=1))
+                filtered_indices = distances <= max_distance
+                filtered_points = point_positions[filtered_indices]
+                
+                if len(filtered_points) > 0:
+                    ax.scatter(
+                        filtered_points[:, 0],
+                        filtered_points[:, 2],
+                        filtered_points[:, 1],
+                        c='b', marker='.', s=1, alpha=0.5, label='Map Points'
+                    )
+                
+                logging.info(
+                    f"Отфильтровано точек: {len(filtered_points)}/{len(point_positions)} "
+                    f"(в радиусе {max_distance} от камеры)"
+                )
+            
+            if len(positions) > 0:
+                ax.scatter(
+                    [last_camera_pos[0]],
+                    [last_camera_pos[2]],
+                    [last_camera_pos[1]],
+                    c='g', marker='o', s=50, label='Current Camera'
+                )
+            
+            ax.set_title('3D Map with Camera Path')
+            ax.set_xlabel('X')
+            ax.set_ylabel('Z')
+            ax.set_zlabel('Y')
+            ax.legend()
+            
+            plt.tight_layout()
+            plt.savefig(output_path)
+            plt.close()
+        except Exception as e:
+            logging.error(f"Ошибка при построении 3D карты точек: {e}")
 
 
 def main():
@@ -674,10 +737,11 @@ def main():
         logging.info("Обработка кадра %s с %d точками", timestamp_str, len(points))
         if pose:
             logging.info(
-                "Позиция камеры: x=%.2f, y=%.2f, z=%.2f", pose.tx, pose.ty, pose.tz
+                "Позиция камеры (мировая): x=%.2f, y=%.2f (высота), z=%.2f",
+                pose.x, pose.y, pose.z
             )
 
-        valid_points = [p for p in points if p.world_x is not None]
+        valid_points = [p for p in points if p.x is not None]
         if valid_points:
             logging.info(
                 "Точек с 3D координатами: %d/%d", len(valid_points), len(points)
@@ -685,7 +749,7 @@ def main():
 
             sorted_points = sorted(
                 valid_points,
-                key=lambda p: p.world_z if p.world_z is not None else float("inf"),
+                key=lambda p: p.z if p.z is not None else float("inf"),
             )
             for i, point in enumerate(sorted_points[:3]):
                 logging.debug(
@@ -693,9 +757,9 @@ def main():
                     i,
                     point.image_x,
                     point.image_y,
-                    point.world_x,
-                    point.world_y,
-                    point.world_z,
+                    point.x,
+                    point.y,
+                    point.z,
                 )
 
     receiver.register_callback(example_processor)
