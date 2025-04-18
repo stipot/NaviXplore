@@ -148,17 +148,17 @@ class ORBDataReceiver:
                 if "pose" in data and tracking_status == "OK":
                     try:
                         pose_data = data["pose"]
-                        
+
                         tx = pose_data.get("tx")
                         ty = pose_data.get("ty")
                         tz = pose_data.get("tz")
-                        
+
                         # Матрица преобразования
                         if "pose_matrix" in data:
                             matrix_data = data["pose_matrix"]
                             if len(matrix_data) == 16:  # 4x4
                                 pose_matrix = np.array(matrix_data).reshape(4, 4)
-                                
+
                                 R = pose_matrix[:3, :3]
                                 t = np.array([tx, ty, tz])
                                 world_pos = -np.dot(R.T, t)
@@ -176,10 +176,15 @@ class ORBDataReceiver:
                             rotation_matrix=pose_matrix,
                         )
                         self.poses_buffer.append(pose)
-                        
+
                         logging.debug(
                             "Получены данные о позиции: исходные (%.2f, %.2f, %.2f), мировые (%.2f, %.2f, %.2f)",
-                            tx, ty, tz, x, y, z
+                            tx,
+                            ty,
+                            tz,
+                            x,
+                            y,
+                            z,
                         )
                     except Exception as e:
                         logging.error("Ошибка обработки данных о позиции: %s", e)
@@ -190,8 +195,12 @@ class ORBDataReceiver:
                         world_x = point_data.get("world_x")
                         world_y = point_data.get("world_y")
                         world_z = point_data.get("world_z")
-                        
-                        if world_x is not None and world_y is not None and world_z is not None:
+
+                        if (
+                            world_x is not None
+                            and world_y is not None
+                            and world_z is not None
+                        ):
                             kp = KeyPoint(
                                 image_x=point_data.get("image_x"),
                                 image_y=point_data.get("image_y"),
@@ -226,7 +235,9 @@ class ORBDataReceiver:
                 if pose:
                     logging.info(
                         "Позиция камеры (мировая): x=%.2f, y=%.2f (высота), z=%.2f",
-                        pose.x, pose.y, pose.z
+                        pose.x,
+                        pose.y,
+                        pose.z,
                     )
 
             except zmq.Again:
@@ -400,43 +411,53 @@ class DebugVisualizer:
 
     def _visualize_points_on_frame(self, frame: np.ndarray, points: List[KeyPoint]):
         """
-        Отрисовка точек на изображении с цветовой кодировкой глубины
+        Отрисовка точек на изображении с цветовой кодировкой расстояния до камеры
 
         Args:
             frame: Изображение для отрисовки
             points: Список ключевых точек
         """
-        min_depth, max_depth = float("inf"), -float("inf")
+        camera_pos = np.array([0, 0, 0])
+        if self.last_pose:
+            camera_pos = np.array(
+                [self.last_pose.x, self.last_pose.y, self.last_pose.z]
+            )
+
+        distances = []
+        valid_points = []
 
         for point in points:
-            if point.z is not None:
-                min_depth = min(min_depth, point.z)
-                max_depth = max(max_depth, point.z)
+            if point.x is not None and point.y is not None and point.z is not None:
+                point_pos = np.array([point.x, point.y, point.z])
+                distance = np.linalg.norm(point_pos - camera_pos)
 
-        if min_depth == float("inf"):
-            min_depth, max_depth = 0, 1
+                distances.append(distance)
+                valid_points.append((point, distance))
 
-        depth_range = max(0.001, max_depth - min_depth)
+        if not distances:
+            return
 
-        for i, point in enumerate(points):
+        min_distance = min(distances)
+        max_distance = max(distances)
+        distance_range = max(0.001, max_distance - min_distance)
+
+        for point, distance in valid_points:
             try:
                 x, y = int(point.image_x), int(point.image_y)
 
                 if 0 <= x < frame.shape[1] and 0 <= y < frame.shape[0]:
-                    if point.z is not None:
-                        normalized_depth = (point.z - min_depth) / depth_range
-                        color = (
-                            int(255 * (1 - normalized_depth)),  # B
-                            0,  # G
-                            int(255 * normalized_depth),  # R
-                        )
-                    else:
-                        color = (0, 255, 0)  # G
+                    normalized_distance = (distance - min_distance) / distance_range
+
+                    red = int(255 * (1 - normalized_distance))
+                    blue = int(255 * normalized_distance)
+
+                    color = (blue, 0, red)
 
                     cv2.circle(frame, (x, y), 4, color, -1)
+
                     cv2.putText(
                         frame,
-                        f"{i}",
+                        f"{distances.index(distance)}",
                         (x + 5, y),
                         cv2.FONT_HERSHEY_SIMPLEX,
                         0.4,
@@ -444,11 +465,11 @@ class DebugVisualizer:
                         1,
                     )
 
-                    if point.x is not None and point.y is not None and point.z is not None:
-                        cv2.line(frame, (x, y), (x, y - 15), color, 1)
-                        cv2.circle(frame, (x, y - 15), 2, color, -1)
+                    cv2.line(frame, (x, y), (x, y - 15), color, 1)
+                    cv2.circle(frame, (x, y - 15), 2, color, -1)
+
             except Exception as e:
-                logging.error("Ошибка при отрисовке точки %d: %s", i, e)
+                logging.error(f"Ошибка при отрисовке точки: {e}")
 
     def _print_points_info(
         self, timestamp: float, points: List[KeyPoint], max_points: int = 5
@@ -560,7 +581,7 @@ class DebugVisualizer:
         if len(self.trajectory) > 0:
             fig_path = os.path.join(self.output_dir, "trajectory.png")
             self._plot_trajectory(fig_path)
-            
+
             points_3d_path = os.path.join(self.output_dir, "points_3d.png")
             self._plot_points_3d(points_3d_path)
 
@@ -584,42 +605,42 @@ class DebugVisualizer:
         """Создает и сохраняет график траектории камеры с учетом системы координат ORB-SLAM3"""
         if len(self.trajectory) < 2:
             return
-            
+
         try:
             fig = plt.figure(figsize=(12, 10))
-            
+
             positions = []
             for pose in self.trajectory:
                 positions.append([pose.x, pose.y, pose.z])
-            
+
             if positions:
                 positions = np.array(positions)
-                
+
                 ax1 = fig.add_subplot(221)
-                ax1.plot(positions[:, 0], positions[:, 2], 'r-')
-                ax1.set_title('Проекция X-Z (вид сверху)')
-                ax1.set_xlabel('X')
-                ax1.set_ylabel('Z')
-                
+                ax1.plot(positions[:, 0], positions[:, 2], "r-")
+                ax1.set_title("Проекция X-Z (вид сверху)")
+                ax1.set_xlabel("X")
+                ax1.set_ylabel("Z")
+
                 ax2 = fig.add_subplot(222)
-                ax2.plot(positions[:, 0], positions[:, 1], 'g-')
-                ax2.set_title('Проекция X-Y (вид спереди)')
-                ax2.set_xlabel('X')
-                ax2.set_ylabel('Y (высота)')
-                
+                ax2.plot(positions[:, 0], positions[:, 1], "g-")
+                ax2.set_title("Проекция X-Y (вид спереди)")
+                ax2.set_xlabel("X")
+                ax2.set_ylabel("Y (высота)")
+
                 ax3 = fig.add_subplot(223)
-                ax3.plot(positions[:, 2], positions[:, 1], 'b-')
-                ax3.set_title('Проекция Z-Y (вид сбоку)')
-                ax3.set_xlabel('Z')
-                ax3.set_ylabel('Y (высота)')
-                
-                ax4 = fig.add_subplot(224, projection='3d')
+                ax3.plot(positions[:, 2], positions[:, 1], "b-")
+                ax3.set_title("Проекция Z-Y (вид сбоку)")
+                ax3.set_xlabel("Z")
+                ax3.set_ylabel("Y (высота)")
+
+                ax4 = fig.add_subplot(224, projection="3d")
                 ax4.plot3D(positions[:, 0], positions[:, 2], positions[:, 1])
-                ax4.set_title('3D траектория')
-                ax4.set_xlabel('X')
-                ax4.set_ylabel('Z')
-                ax4.set_zlabel('Y')
-            
+                ax4.set_title("3D траектория")
+                ax4.set_xlabel("X")
+                ax4.set_ylabel("Z")
+                ax4.set_zlabel("Y")
+
             plt.tight_layout()
             plt.savefig(output_path)
             plt.close()
@@ -630,59 +651,70 @@ class DebugVisualizer:
         """Создает и сохраняет 3D график всех точек с путем камеры"""
         if not self.trajectory or not self.all_points:
             return
-            
+
         try:
             fig = plt.figure(figsize=(12, 10))
-            ax = fig.add_subplot(111, projection='3d')
-            
+            ax = fig.add_subplot(111, projection="3d")
+
             positions = np.array([[pose.x, pose.y, pose.z] for pose in self.trajectory])
             if len(positions) > 0:
                 ax.plot3D(
-                    positions[:, 0], 
+                    positions[:, 0],
                     positions[:, 2],
                     positions[:, 1],
-                    'r-', linewidth=2, label='Camera Path'
+                    "r-",
+                    linewidth=2,
+                    label="Camera Path",
                 )
-                
+
                 last_camera_pos = positions[-1]
             else:
                 last_camera_pos = np.array([0, 0, 0])
-            
+
             if self.all_points:
                 point_positions = np.array(list(self.all_points))
 
                 max_distance = 7.0
-                distances = np.sqrt(np.sum((point_positions - last_camera_pos)**2, axis=1))
+                distances = np.sqrt(
+                    np.sum((point_positions - last_camera_pos) ** 2, axis=1)
+                )
                 filtered_indices = distances <= max_distance
                 filtered_points = point_positions[filtered_indices]
-                
+
                 if len(filtered_points) > 0:
                     ax.scatter(
                         filtered_points[:, 0],
                         filtered_points[:, 2],
                         filtered_points[:, 1],
-                        c='b', marker='.', s=1, alpha=0.5, label='Map Points'
+                        c="b",
+                        marker=".",
+                        s=1,
+                        alpha=0.5,
+                        label="Map Points",
                     )
-                
+
                 logging.info(
                     f"Отфильтровано точек: {len(filtered_points)}/{len(point_positions)} "
                     f"(в радиусе {max_distance} от камеры)"
                 )
-            
+
             if len(positions) > 0:
                 ax.scatter(
                     [last_camera_pos[0]],
                     [last_camera_pos[2]],
                     [last_camera_pos[1]],
-                    c='g', marker='o', s=50, label='Current Camera'
+                    c="g",
+                    marker="o",
+                    s=50,
+                    label="Current Camera",
                 )
-            
-            ax.set_title('3D Map with Camera Path')
-            ax.set_xlabel('X')
-            ax.set_ylabel('Z')
-            ax.set_zlabel('Y')
+
+            ax.set_title("3D Map with Camera Path")
+            ax.set_xlabel("X")
+            ax.set_ylabel("Z")
+            ax.set_zlabel("Y")
             ax.legend()
-            
+
             plt.tight_layout()
             plt.savefig(output_path)
             plt.close()
@@ -738,7 +770,9 @@ def main():
         if pose:
             logging.info(
                 "Позиция камеры (мировая): x=%.2f, y=%.2f (высота), z=%.2f",
-                pose.x, pose.y, pose.z
+                pose.x,
+                pose.y,
+                pose.z,
             )
 
         valid_points = [p for p in points if p.x is not None]
