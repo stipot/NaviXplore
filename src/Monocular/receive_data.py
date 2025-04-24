@@ -500,12 +500,12 @@ class DebugVisualizer:
             "Всего точек с 3D координатами: %d/%d", len(valid_points), len(points)
         )
 
+        logging.info("Ближайшие точки:")
         sorted_points = sorted(
             valid_points,
             key=lambda p: p.z if p.z is not None else float("inf"),
         )
 
-        logging.info("Ближайшие точки:")
         for i, point in enumerate(sorted_points[:max_points]):
             logging.info(
                 "Точка %d: Экран: (%.1f, %.1f), Мир: (%.2f, %.2f, %.2f), Размер: %.1f, Угол: %.1f°",
@@ -745,6 +745,20 @@ def main():
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s: %(message)s", level=log_level
     )
+    
+    # Проверка и корректировка имени директории
+    debug_dir = args.debug_output
+    if args.debug and os.path.exists(debug_dir):
+        if os.path.isdir(debug_dir) and os.listdir(debug_dir):
+            base_dir = debug_dir
+            i = 1
+            while os.path.exists(f"{base_dir}_{i}"):
+                i += 1
+            debug_dir = f"{base_dir}_{i}"
+            logging.warning(
+                "Директория '%s' уже существует и содержит файлы. Будет использована новая директория '%s'",
+                args.debug_output, debug_dir
+            )
 
     running = True
 
@@ -759,9 +773,9 @@ def main():
 
     debug_visualizer = None
     if args.debug:
-        debug_visualizer = DebugVisualizer(output_dir=args.debug_output)
+        debug_visualizer = DebugVisualizer(output_dir=debug_dir)
         receiver.register_callback(debug_visualizer.process_frame)
-        logging.info("Запущен отладочный режим, вывод в %s", args.debug_output)
+        logging.info("Запущен отладочный режим, вывод в %s", debug_dir)
 
     def example_processor(timestamp, image, pose, points):
         """Обработчик данных"""
