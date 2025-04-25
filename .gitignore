@@ -18,3 +18,5 @@ src/embeddings_dev/weights
 src/embeddings_dev/dataset_small
 src/embeddings_dev/.virtual_documents/
 src/Monocular/debug_output/
+src/Monocular/collected_data/
+src/Monocular/long_debug/

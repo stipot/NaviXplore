@@ -10,12 +10,13 @@ import threading
 from typing import List, Optional, Tuple, Callable
 from collections import deque
 from dataclasses import dataclass
+import locale
 import cv2
 import numpy as np
 import zmq
 import matplotlib
 import matplotlib.pyplot as plt
-import locale
+import pandas as pd
 
 
 matplotlib.set_loglevel("WARNING")
@@ -469,7 +470,7 @@ class DebugVisualizer:
                     cv2.circle(frame, (x, y - 15), 2, color, -1)
 
             except Exception as e:
-                logging.error(f"Ошибка при отрисовке точки: {e}")
+                logging.error("Ошибка при отрисовке точки: %s", e)
 
     def _print_points_info(
         self, timestamp: float, points: List[KeyPoint], max_points: int = 5
@@ -540,6 +541,7 @@ class DebugVisualizer:
             <!DOCTYPE html>
             <html>
             <head>
+                <meta charset="utf-8">
                 <title>ORB-SLAM3 Debug Report</title>
                 <style>
                     body { font-family: Arial, sans-serif; margin: 20px; }
@@ -645,7 +647,7 @@ class DebugVisualizer:
             plt.savefig(output_path)
             plt.close()
         except Exception as e:
-            logging.error(f"Ошибка при построении траектории: {e}")
+            logging.error("Ошибка при построении траектории: %s", e)
 
     def _plot_points_3d(self, output_path):
         """Создает и сохраняет 3D график всех точек с путем камеры"""
@@ -694,8 +696,10 @@ class DebugVisualizer:
                     )
 
                 logging.info(
-                    f"Отфильтровано точек: {len(filtered_points)}/{len(point_positions)} "
-                    f"(в радиусе {max_distance} от камеры)"
+                    "Отфильтровано точек: %d/%d (в радиусе %f от камеры)",
+                    len(filtered_points),
+                    len(point_positions),
+                    max_distance,
                 )
 
             if len(positions) > 0:
@@ -719,7 +723,119 @@ class DebugVisualizer:
             plt.savefig(output_path)
             plt.close()
         except Exception as e:
-            logging.error(f"Ошибка при построении 3D карты точек: {e}")
+            logging.error("Ошибка при построении 3D карты точек: %s", e)
+
+
+def save_collected_data(output_dir, frames_data):
+    """Сохраняет собранные данные в CSV-файлы и изображения внутри указанной директории"""
+    if not frames_data:
+        logging.warning("Нет данных для сохранения")
+        return
+
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+        logging.info("Создана директория для сохранения данных: %s", output_dir)
+
+    images_dir = os.path.join(output_dir, "images")
+    if not os.path.exists(images_dir):
+        os.makedirs(images_dir)
+        logging.info("Создана директория для сохранения изображений: %s", images_dir)
+
+    frames_file = os.path.join(output_dir, "collected_data.csv")
+    points_file = os.path.join(output_dir, "collected_data_points.csv")
+
+    frame_data_list = []
+    for idx, (ts, img, pose, points) in enumerate(frames_data):
+        image_filename = f"frame_{idx:03d}_ts_{int(ts)}.jpg"
+        image_path = os.path.join(images_dir, image_filename)
+        cv2.imwrite(image_path, img)
+
+        data_row = {
+            "frame_idx": idx,
+            "timestamp": int(ts),
+            "num_points": len(points),
+            "image_filename": image_filename,
+        }
+
+        if pose:
+            data_row["camera_x"] = pose.x
+            data_row["camera_y"] = pose.y
+            data_row["camera_z"] = pose.z
+
+            if pose.rotation_matrix is not None:
+                for i in range(4):
+                    for j in range(4):
+                        data_row[f"r{i}{j}"] = pose.rotation_matrix[i, j]
+
+        frame_data_list.append(data_row)
+
+    df_frames = pd.DataFrame(frame_data_list)
+    df_frames.to_csv(frames_file, index=False)
+
+    points_data_list = []
+    for idx, (ts, img, pose, points) in enumerate(frames_data):
+        for p_idx, point in enumerate(points):
+            point_data = {
+                "frame_idx": idx,
+                "timestamp": int(ts),
+                "point_idx": p_idx,
+                "image_x": point.image_x,
+                "image_y": point.image_y,
+                "size": point.size,
+                "angle": point.angle,
+                "response": point.response,
+                "octave": point.octave,
+            }
+
+            if point.x is not None:
+                point_data["world_x"] = point.x
+                point_data["world_y"] = point.y
+                point_data["world_z"] = point.z
+
+            points_data_list.append(point_data)
+
+    df_points = pd.DataFrame(points_data_list)
+    df_points.to_csv(points_file, index=False)
+
+    logging.info("Данные о кадрах сохранены в %s", frames_file)
+    logging.info("Данные о точках сохранены в %s", points_file)
+    logging.info("Изображения сохранены в директории %s", images_dir)
+
+    logging.info("Собрано кадров: %d", len(frames_data))
+    total_points = sum(len(points) for _, _, _, points in frames_data)
+    total_3d_points = sum(
+        len([p for p in points if p.x is not None]) for _, _, _, points in frames_data
+    )
+    logging.info(
+        "Всего точек: %d, из них с 3D координатами: %d", total_points, total_3d_points
+    )
+
+    return frames_file, points_file
+
+
+def ensure_unique_directory(base_dir: str) -> str:
+    """
+    Создает уникальную директорию с добавлением индекса, если требуется
+
+    Args:
+        base_dir: Базовое имя директории
+
+    Returns:
+        Уникальное имя директории (с индексом, если требуется)
+    """
+    if os.path.exists(base_dir) and os.path.isdir(base_dir) and os.listdir(base_dir):
+        original_dir = base_dir
+        i = 1
+        while os.path.exists(f"{original_dir}_{i}"):
+            i += 1
+        new_dir = f"{original_dir}_{i}"
+        logging.warning(
+            "Директория '%s' уже существует и содержит файлы. Будет использована новая директория '%s'",
+            base_dir,
+            new_dir,
+        )
+        return new_dir
+    return base_dir
 
 
 def main():
@@ -737,6 +853,17 @@ def main():
         default="debug_output",
         help="Директория для сохранения отладочных данных",
     )
+    parser.add_argument(
+        "--collect-data",
+        action="store_true",
+        help="Собрать и сохранить данные с 5 кадров с интервалом в 1 секунду",
+    )
+    parser.add_argument(
+        "--data-output",
+        type=str,
+        default="collected_data",
+        help="Директория для сохранения собранных данных",
+    )
     args = parser.parse_args()
 
     locale.setlocale(locale.LC_ALL, "")
@@ -745,42 +872,67 @@ def main():
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s: %(message)s", level=log_level
     )
-    
-    # Проверка и корректировка имени директории
-    debug_dir = args.debug_output
-    if args.debug and os.path.exists(debug_dir):
-        if os.path.isdir(debug_dir) and os.listdir(debug_dir):
-            base_dir = debug_dir
-            i = 1
-            while os.path.exists(f"{base_dir}_{i}"):
-                i += 1
-            debug_dir = f"{base_dir}_{i}"
-            logging.warning(
-                "Директория '%s' уже существует и содержит файлы. Будет использована новая директория '%s'",
-                args.debug_output, debug_dir
-            )
 
     running = True
+    debug_mode = args.debug
+    collect_data_enabled = args.collect_data
+    data_output_dir = args.data_output
+    collected_frames = []
+    max_frames_to_collect = 5
+    collection_start_time = None
+    collection_interval = 1.0
 
     def signal_handler(_sig, _frame):
         nonlocal running
         logging.info("Получен сигнал завершения...")
         running = False
 
-    signal.signal(signal.SIGINT, signal_handler)
-
-    receiver = ORBDataReceiver(data_port=args.data_port)
-
-    debug_visualizer = None
-    if args.debug:
-        debug_visualizer = DebugVisualizer(output_dir=debug_dir)
-        receiver.register_callback(debug_visualizer.process_frame)
-        logging.info("Запущен отладочный режим, вывод в %s", debug_dir)
-
     def example_processor(timestamp, image, pose, points):
-        """Обработчик данных"""
+        nonlocal collected_frames, collection_start_time, running
+
         timestamp_str = str(int(timestamp))
         logging.info("Обработка кадра %s с %d точками", timestamp_str, len(points))
+
+        if (
+            collect_data_enabled
+            and len(collected_frames) < max_frames_to_collect
+            and pose is not None
+        ):
+            current_time = time.time()
+
+            if collection_start_time is None:
+                collection_start_time = current_time
+                collected_frames.append((timestamp, image.copy(), pose, points))
+                logging.info("Собран кадр 1/%d (статус: OK)", max_frames_to_collect)
+            elif (
+                current_time - collection_start_time
+                >= len(collected_frames) * collection_interval
+            ):
+                collected_frames.append((timestamp, image.copy(), pose, points))
+                logging.info(
+                    "Собран кадр %s/%d (статус: OK)",
+                    len(collected_frames),
+                    max_frames_to_collect,
+                )
+
+                if len(collected_frames) >= max_frames_to_collect:
+                    output_file, points_file = save_collected_data(
+                        data_output_dir, collected_frames
+                    )
+                    logging.info(
+                        "Сбор данных завершен. Данные сохранены в %s и %s",
+                        output_file,
+                        points_file,
+                    )
+
+                    if collect_data_enabled:
+                        logging.info(
+                            "Все необходимые данные собраны. Программа будет остановлена."
+                        )
+                        running = False
+        elif collect_data_enabled and pose is None:
+            logging.info("Кадр пропущен для сбора данных: статус трекинга не OK")
+
         if pose:
             logging.info(
                 "Позиция камеры (мировая): x=%.2f, y=%.2f (высота), z=%.2f",
@@ -788,6 +940,14 @@ def main():
                 pose.y,
                 pose.z,
             )
+
+            if pose.rotation_matrix is not None and debug_mode:
+                logging.debug("Матрица поворота камеры:")
+                for i in range(4):
+                    row = " ".join(
+                        [f"{pose.rotation_matrix[i,j]:.4f}" for j in range(4)]
+                    )
+                    logging.debug("    [%s]", row)
 
         valid_points = [p for p in points if p.x is not None]
         if valid_points:
@@ -810,6 +970,23 @@ def main():
                     point.z,
                 )
 
+    debug_dir = args.debug_output
+    if args.debug:
+        debug_dir = ensure_unique_directory(debug_dir)
+
+    if args.collect_data:
+        data_output_dir = ensure_unique_directory(data_output_dir)
+
+    signal.signal(signal.SIGINT, signal_handler)
+
+    receiver = ORBDataReceiver(data_port=args.data_port)
+
+    debug_visualizer = None
+    if args.debug:
+        debug_visualizer = DebugVisualizer(output_dir=debug_dir)
+        receiver.register_callback(debug_visualizer.process_frame)
+        logging.info("Запущен отладочный режим, вывод в %s", debug_dir)
+
     receiver.register_callback(example_processor)
 
     try:
@@ -826,6 +1003,23 @@ def main():
         if debug_visualizer:
             report_path = debug_visualizer.generate_report()
             logging.info("Сгенерирован отчет: %s", report_path)
+
+        if (
+            args.collect_data
+            and collected_frames
+            and len(collected_frames) < max_frames_to_collect
+        ):
+            output_file, points_file = save_collected_data(
+                data_output_dir, collected_frames
+            )
+            logging.info(
+                "Программа завершается. Собрано %d/%d кадров. "
+                "Данные сохранены в %s и %s",
+                len(collected_frames),
+                max_frames_to_collect,
+                output_file,
+                points_file,
+            )
 
         cv2.destroyAllWindows()
 
