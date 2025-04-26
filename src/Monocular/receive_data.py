@@ -746,7 +746,7 @@ def save_collected_data(output_dir, frames_data):
 
     frame_data_list = []
     for idx, (ts, img, pose, points) in enumerate(frames_data):
-        image_filename = f"frame_{idx:03d}_ts_{int(ts)}.jpg"
+        image_filename = f"frame_{idx:06d}_ts_{int(ts)}.jpg"
         image_path = os.path.join(images_dir, image_filename)
         cv2.imwrite(image_path, img)
 
@@ -878,7 +878,7 @@ def main():
     collect_data_enabled = args.collect_data
     data_output_dir = args.data_output
     collected_frames = []
-    max_frames_to_collect = 5
+    max_frames_to_collect = 100
     collection_start_time = None
     collection_interval = 1.0
 

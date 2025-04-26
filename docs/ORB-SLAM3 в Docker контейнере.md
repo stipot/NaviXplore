@@ -129,3 +129,62 @@ target_link_libraries(mono_inertial ${PROJECT_NAME} ${ZeroMQ_LIBRARIES})
 ```Shell
 ./Examples/Monocular-Inertial/mono_inertial_euroc ./Vocabulary/ORBvoc.txt ./Examples/Monocular-Inertial/EuRoC.yaml ../Datasets/EuRoc/MH01 ./Examples/Monocular-Inertial/EuRoC_TimeStamps/MH01.txt dataset-MH01_monocular-inertial
 ```
+
+- Команда для запуска моно-режима с EuRoC:
+```Shell
+./Examples/Monocular/mono_euroc ./Vocabulary/ORBvoc.txt ./Examples/Monocular/EuRoC.yaml ../Datasets/EuRoc/carla_dataset_mono ../Datasets/EuRoC/carla_dataset_mono/mav0/timestamps.txt carla_dataset-mono
+```
+
+- Актуальный запуск текущей архитектуры.
+- В NaviXplore/src/Monocular запустить
+```Shell
+./test_monocular_dataset.py --dataset carla_dataset_long_60fps/
+```
+- В отдельном терминале в NaviXplore/src/Monocular:
+```Shell
+./receive_coordinates.py
+```
+- В контейнере с ORB-SLAM3:
+```Shell
+./Examples/Monocular/camera_carla_transfer ./Vocabulary/ORBvoc.txt   ./Examp
+les/Monocular/carla_60.yaml   tcp://host.docker.internal:5555 tcp://host.docker.internal:5556
+```
+
+- Установка библиотеки JSON в Docker контейнер:
+```Shell
+wget https://raw.githubusercontent.com/nlohmann/json/v3.11.2/single_include/nlohmann/json.hpp -P ./include/nlohmann/
+```
+
+- Новый запуск архитектуры.
+- В NaviXplore/src/Monocular запустить
+```Shell
+./receive_data.py --data-port 5557
+```
+- Подача датасета: в отдельном терминале в NaviXplore/src/Monocular:
+```Shell
+./test_monocular_dataset.py --dataset carla_dataset_long_60fps/
+```
+- В контейнере с ORB-SLAM3:
+```Shell
+./Examples/Monocular/camera_carla_transfer_extended ./Vocabulary/ORBvoc.txt   ./Examples/Monocular/carla_60.yaml tcp://host.docker.internal:5555 tcp://host.docker.internal:5557
+```
+
+- Описание аргументов receive_data.py:
+	- "--data-port":
+		- type=int
+		- default=5557
+		- help="Порт для приема всех данных (по умолчанию 5557)"
+	- "--debug":
+		- action="store_true"
+		- help="Включить режим отладки"
+	- "--debug-output":
+		- type=str
+		- default="debug_output"
+		- help="Директория для сохранения отладочных данных"
+	- "--collect-data":
+		- action="store_true"
+		- help="Собрать и сохранить данные с 5 кадров с интервалом в 1 секунду"
+	- "--data-output":
+		- type=str
+		- default="collected_data"
+		- help="Директория для сохранения собранных данных"
