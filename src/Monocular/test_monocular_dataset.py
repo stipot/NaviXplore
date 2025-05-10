@@ -1,5 +1,10 @@
 #!/usr/bin/env python
 
+"""
+Скрипт для последовательной передачи собранного набора данных (через скрипт record_monocular_dataset.py)
+в ORB-SLAM3 через порт zmq.
+"""
+
 import os
 import argparse
 import logging

@@ -1,3 +1,8 @@
+/**
+ * Актуальный файл для размещения внутри Docker-контейнера с ORB-SLAM3.
+ * Запускает процесс ORB-SLAM3, слушает данные на вводном адресе zmq и передаёт обработанные данные на выходной.
+ */
+
 #include <iostream>
 #include <chrono>
 #include <opencv2/core/core.hpp>
@@ -9,6 +14,7 @@
 #include <sstream>
 #include <iomanip>
 #include "nlohmann/json.hpp"
+
 
 void ProcessImage(ORB_SLAM3::System& SLAM, const cv::Mat& im, const double& tframe, 
                   zmq::socket_t& publisher, const std::vector<uchar>& jpeg_data)

@@ -1,3 +1,8 @@
+/**
+ * Неактуальный файл для размещения внутри Docker-контейнера с ORB-SLAM3.
+ * Запускает процесс ORB-SLAM3, слушает изображения на одном адресе zmq и передаёт координаты на другой.
+ */
+
 #include <iostream>
 #include <chrono>
 #include <opencv2/core/core.hpp>

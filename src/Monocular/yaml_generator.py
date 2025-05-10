@@ -1,3 +1,7 @@
+"""
+Функционал генерации конфигурационного .yaml файла для скрипта record_monocular_dataset.py в формате ORB-SLAM3.
+"""
+
 import math
 
 

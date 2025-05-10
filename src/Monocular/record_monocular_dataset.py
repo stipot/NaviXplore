@@ -1,5 +1,10 @@
 #!/usr/bin/env python
 
+"""
+Скрипт для сбора монокулярного датасета из симулятора городской среды CARLA Simulator.
+Требует запущенного симулятора и установленного Python API для него.
+"""
+
 import os
 import time
 import argparse

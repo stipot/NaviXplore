@@ -1,5 +1,28 @@
 #!/usr/bin/env python
 
+"""
+Основной скрипт для получения данных от ORB-SLAM3 через порт zmq.
+Описание аргументов:
+- "--data-port":
+    - type=int
+    - default=5557
+    - help="Порт для приема всех данных (по умолчанию 5557)"
+- "--debug":
+    - action="store_true"
+    - help="Включить режим отладки"
+- "--debug-output":
+    - type=str
+    - default="debug_output"
+    - help="Директория для сохранения отладочных данных"
+- "--collect-data":
+    - action="store_true"
+    - help="Собрать и сохранить данные с 5 кадров с интервалом в 1 секунду"
+- "--data-output":
+    - type=str
+    - default="collected_data"
+    - help="Директория для сохранения собранных данных"
+"""
+
 import json
 import time
 import argparse

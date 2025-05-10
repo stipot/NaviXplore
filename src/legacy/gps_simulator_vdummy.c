@@ -1,3 +1,8 @@
+/**
+ * Неактуальный файл для размещения внутри Docker-контейнера с ORB-SLAM3.
+ * Запускает передачу фиктивных GPS-координат через NMEA-сообщения по Bluetooth на Android устройство.
+ */
+
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>

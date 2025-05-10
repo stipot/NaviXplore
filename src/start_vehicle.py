@@ -1,5 +1,11 @@
 #!/usr/bin/env python
 
+"""
+Неактуальный скрипт для запуска обхода транспорта траектории в монокулярно-инерациальном режиме в CARLA Simulator.
+Реализована инициализация для IMU-датчика через резкие движения камерой и машиной.
+Требует запущенного симулятора и установленного Python API для него.
+"""
+
 import time
 import threading
 import signal
@@ -86,10 +92,10 @@ def handle_imu(imu_data, imu_data_queue):
 def process_data(image_queue, imu_data_queue, display_image):
     """
     Поток для синхронной обработки данных:
-    1. Извлекаем последний кадр + метку времени.
-    2. Отбираем из очереди IMU все события, чья метка <= метки кадра.
-    3. Отправляем кадр и IMU-события через ZMQ.
-    4. Опционально выводим кадр в локальном окне.
+    1. Извлечение последнего кадра + метки времени.
+    2. Отбор из очереди IMU всех событий, чья метка <= метки кадра.
+    3. Отправка кадра и IMU-события через ZMQ.
+    4. Опциональный вывод кадрв в локальном окне.
     """
     global RUNNING
     while RUNNING:
@@ -404,12 +410,12 @@ def main():
         sensors_list.append(imu_sensor)
 
         if synchronous_master:
-            print("Делаем несколько tick(), чтобы мир обновился...")
+            print("Несколько tick(), чтобы мир обновился...")
             for _ in range(10):
                 world.tick()
                 time.sleep(0.05)
         else:
-            print("Делаем несколько кадров через wait_for_tick()...")
+            print("Несколько кадров через wait_for_tick()...")
             for _ in range(10):
                 world.wait_for_tick()
                 time.sleep(0.05)
@@ -426,7 +432,7 @@ def main():
         )
         data_thread.start()
 
-        print("Выполняем серию раскачиваний для инициализации IMU...")
+        print("Серия раскачиваний для инициализации IMU...")
         move_vehicle_for_initialization(world, synchronous_master, vehicle)
         print("Инициализация IMU завершена.")
 
@@ -446,7 +452,7 @@ def main():
             world.apply_settings(settings)
 
         print(
-            f"Останавливаем {len(sensors_list)} сенсоров и удаляем {len(vehicles_list)} машин(ы)..."
+            f"Остановка {len(sensors_list)} сенсоров и удаление {len(vehicles_list)} машин(ы)..."
         )
         for sensor in sensors_list:
             sensor.stop()

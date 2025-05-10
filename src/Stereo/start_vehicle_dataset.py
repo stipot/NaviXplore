@@ -1,5 +1,10 @@
 #!/usr/bin/env python
 
+"""
+Неактуальный скрипт для запуска обхода транспорта траектории в стерео режиме в CARLA Simulator.
+Требует запущенного симулятора и установленного Python API для него.
+"""
+
 import os
 import time
 import argparse
