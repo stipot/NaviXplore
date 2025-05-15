@@ -161,7 +161,10 @@ def main():
         help="Множитель скорости воспроизведения (по умолчанию 1.0)",
     )
     parser.add_argument(
-        "--loop", action="store_true", help="Повторять воспроизведение по кругу"
+        "--loop",
+        action="store_true",
+        help="Повторять воспроизведение по кругу",
+        default=True,
     )
     args = parser.parse_args()
 
@@ -188,4 +191,4 @@ def main():
 if __name__ == "__main__":
     main()
 
-# Использование: ./test_monocular_dataset.py --dataset <Директория> --speed <Скорость>
+# Использование: ./test_monocular_dataset.py --dataset <Директория>

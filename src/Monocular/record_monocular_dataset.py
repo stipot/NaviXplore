@@ -94,7 +94,6 @@ def main():
         "--tm-port", type=int, default=8000, help="Порт Traffic Manager"
     )
     parser.add_argument("--preview", dest="preview", action="store_true", default=True)
-    parser.add_argument("--no-preview", dest="preview", action="store_false")
     parser.add_argument(
         "--speed",
         type=float,
