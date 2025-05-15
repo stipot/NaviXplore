@@ -1,20 +1,18 @@
 #!/usr/bin/env python
 
 """
-Скрипт для последовательной передачи собранного набора данных (через скрипт record_monocular_dataset.py)
-в ORB-SLAM3 через порт zmq.
+Скрипт для последовательной передачи собранного через скрипт record_monocular_dataset.py
+набора данныхв ORB-SLAM3 через порт zmq.
 """
 
 import os
 import argparse
 import logging
-import cv2
-import numpy as np
 import time
-import zmq
 import signal
-import threading
 import json
+import cv2
+import zmq
 
 
 DEFAULT_PORT = 5555
@@ -45,7 +43,7 @@ class DatasetPlayer:
         self.context = zmq.Context()
         self.socket = self.context.socket(zmq.PUB)
         self.socket.bind(socket_addr)
-        logging.info(f"ZMQ сокет открыт на {socket_addr}")
+        logging.info("ZMQ сокет открыт на %s", socket_addr)
 
         self.timestamps = []
         self._load_timestamps()
@@ -56,17 +54,17 @@ class DatasetPlayer:
         if not self.image_files:
             raise ValueError(f"В директории {self.images_path} нет изображений")
 
-        logging.info(f"Найдено {len(self.image_files)} изображений")
+        logging.info("Найдено %d изображений", len(self.image_files))
 
     def _load_timestamps(self):
         """Загружает временные метки из файла."""
         if os.path.exists(self.timestamps_file):
-            with open(self.timestamps_file, "r") as f:
+            with open(self.timestamps_file, "r", encoding="utf-8") as f:
                 self.timestamps = [int(line.strip()) for line in f if line.strip()]
-            logging.info(f"Загружено {len(self.timestamps)} временных меток")
+            logging.info("Загружено %d временных меток", len(self.timestamps))
         else:
             logging.warning(
-                f"Файл {self.timestamps_file} не найден, используются имена файлов"
+                "Файл %s не найден, используются имена файлов", self.timestamps_file
             )
 
     def play(self, speed_factor=1.0, loop=False):
@@ -82,7 +80,7 @@ class DatasetPlayer:
             self.timestamps = [int(os.path.splitext(f)[0]) for f in images]
 
         logging.info(
-            f"Начинается воспроизведение датасета со скоростью {speed_factor}x"
+            "Начинается воспроизведение датасета со скоростью %sx", speed_factor
         )
 
         while running:
@@ -94,21 +92,20 @@ class DatasetPlayer:
                 frame = cv2.imread(img_path)
 
                 if frame is None:
-                    logging.warning(f"Не удалось прочитать изображение: {img_path}")
+                    logging.warning("Не удалось прочитать изображение: %s", img_path)
                     continue
 
                 _, jpeg_buffer = cv2.imencode(".jpg", frame)
-                
-                message_data = {
-                    "timestamp": self.timestamps[i],
-                    "frame_id": i
-                }
-                
+
+                message_data = {"timestamp": self.timestamps[i], "frame_id": i}
+
                 message_json = json.dumps(message_data)
                 self.socket.send_string(message_json, zmq.SNDMORE)
                 self.socket.send(jpeg_buffer.tobytes())
-                
-                logging.debug(f"Отправлен кадр {i} с timestamp {message_data['timestamp']}")
+
+                logging.debug(
+                    "Отправлен кадр %s с timestamp %s", i, message_data["timestamp"]
+                )
 
                 cv2.imshow("Playback", frame)
                 key = cv2.waitKey(1) & 0xFF
@@ -126,7 +123,7 @@ class DatasetPlayer:
 
                 if i % (len(images) // 10) == 0 and i > 0:
                     progress = i / len(images) * 100
-                    logging.info(f"Прогресс воспроизведения: {progress:.1f}%")
+                    logging.info("Прогресс воспроизведения: %.1f%%", progress)
 
             if not loop or not running:
                 break
@@ -171,7 +168,7 @@ def main():
     logging.basicConfig(format="%(levelname)s: %(message)s", level=logging.INFO)
 
     if not os.path.exists(args.dataset):
-        logging.error(f"Указанный путь к датасету не существует: {args.dataset}")
+        logging.error("Указанный путь к датасету не существует: %s", args.dataset)
         return
 
     socket_addr = f"tcp://*:{args.port}"
@@ -182,7 +179,7 @@ def main():
     except KeyboardInterrupt:
         logging.info("Прервано пользователем")
     except Exception as e:
-        logging.error(f"Ошибка при воспроизведении датасета: {e}")
+        logging.error("Ошибка при воспроизведении датасета: %s", e)
     finally:
         if "player" in locals():
             player.close()

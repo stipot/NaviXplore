@@ -39,7 +39,9 @@ class SimpleDatasetRecorder:
         self.output_path = output_path
         self.images_path = os.path.join(output_path, "images")
         os.makedirs(self.images_path, exist_ok=True)
-        self.timestamps_file = open(os.path.join(output_path, "timestamps.txt"), "w")
+        self.timestamps_file = open(
+            os.path.join(output_path, "timestamps.txt"), "w", encoding="utf-8"
+        )
         self.frame_count = 0
         self.preview = preview
 
@@ -147,7 +149,7 @@ def main():
         recorder = SimpleDatasetRecorder(args.output, preview=args.preview)
         camera.listen(lambda image: recorder.handle_image(image))
         vehicle.set_autopilot(True, args.tm_port)
-        logging.info(f"Начинается запись датасета на {args.duration} секунд...")
+        logging.info("Начинается запись датасета на %d секунд...", args.duration)
         num_frames = int(args.duration * SIMULATION_HZ)
 
         for i in range(num_frames):
@@ -158,18 +160,18 @@ def main():
 
             if i % (num_frames // 10) == 0 and i > 0:
                 progress = i / num_frames * 100
-                logging.info(f"Прогресс записи: {progress:.1f}%")
+                logging.info("Прогресс записи: %.1f%%", progress)
 
         logging.info("Генерация конфигурационного .yaml файла...")
         yaml_name = generate_yaml(
             CAMERA_WIDTH, CAMERA_HEIGHT, CAMERA_FOW, SIMULATION_HZ, args.output
         )
-        logging.info(f"YAML файл сгенерирован: {yaml_name}")
+        logging.info("YAML файл сгенерирован: %s", yaml_name)
 
     except KeyboardInterrupt:
         logging.info("Запись прервана пользователем")
     except Exception as e:
-        logging.error(f"Ошибка при записи: {e}")
+        logging.error("Ошибка при записи: %s", e)
     finally:
         logging.info("Завершение записи...")
         if camera:
@@ -194,7 +196,7 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as e:
-        logging.error(f"Критическая ошибка: {e}")
+        logging.error("Критическая ошибка: %s", e)
     finally:
         logging.info("Программа завершена")
 
