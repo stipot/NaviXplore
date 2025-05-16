@@ -46,6 +46,9 @@ class SimpleDatasetRecorder:
         self.preview = preview
 
     def handle_image(self, image):
+        """Обрабатывает изображения. Записывает их в файлы .png с названием в виде метки времени в наносекундах.
+        При активированной опции self.preview показывает окно предпросмотра.
+        """
         timestamp_ns = int(time.time() * 1e9)
         filename = f"{timestamp_ns}.png"
         img_array = np.frombuffer(image.raw_data, dtype=np.uint8)

@@ -133,7 +133,7 @@ class DatasetPlayer:
         logging.info("Воспроизведение завершено")
 
     def close(self):
-        """Закрывает соединения и освобождает ресурсы."""
+        """Закрывает соединение и освобождает ресурсы."""
         self.socket.close()
         self.context.term()
         cv2.destroyAllWindows()
