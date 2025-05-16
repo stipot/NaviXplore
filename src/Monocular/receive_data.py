@@ -867,25 +867,42 @@ def main():
         "--data-port",
         type=int,
         default=5557,
-        help="Порт для приема всех данных (по умолчанию 5557)",
+        help="""Порт для приема всех данных (по умолчанию 5557)""",
     )
     parser.add_argument("--debug", action="store_true", help="Включить режим отладки")
     parser.add_argument(
         "--debug-output",
         type=str,
         default="debug_output",
-        help="Директория для сохранения отладочных данных",
+        help="""Директория для сохранения отладочных данных""",
     )
     parser.add_argument(
         "--collect-data",
         action="store_true",
-        help="Собрать и сохранить данные с 5 кадров с интервалом в 1 секунду",
+        help="""Собрать и сохранить все данные с информацией из ORB-SLAM3""",
     )
     parser.add_argument(
-        "--data-output",
+        "--collection-data-output",
         type=str,
         default="collected_data",
-        help="Директория для сохранения собранных данных",
+        help="""Директория для сохранения собранных данных. Используется только
+        при активном аргументе collect-data""",
+    )
+    parser.add_argument(
+        "--collection-max-frames",
+        type=int,
+        default=100,
+        help="""Максимальное количество кадров для сбора.
+        -1 для сбора всех кадров. Используется только
+        при активном аргументе collect-data""",
+    )
+    parser.add_argument(
+        "--collection-interval",
+        type=float,
+        default=1.0,
+        help="""Интервал между собираемыми данными.
+        0 для сбора всех кадров. Используется только
+        при активном аргументе collect-data""",
     )
     args = parser.parse_args()
 
@@ -899,15 +916,24 @@ def main():
     running = True
     debug_mode = args.debug
     collect_data_enabled = args.collect_data
-    data_output_dir = args.data_output
+    data_output_dir = args.collection_data_output
     collected_frames = []
-    max_frames_to_collect = 100
+    max_frames_to_collect = args.collection_max_frames
     collection_start_time = None
-    collection_interval = 1.0
+    collection_interval = args.collection_interval
+
+    # Добавляем лог и задержку для режима полного сбора
+    if collect_data_enabled and max_frames_to_collect == -1:
+        logging.info("Активирован режим полного сбора данных. Сбор будет продолжаться до ручного завершения (Ctrl+C)")
+        logging.info("Подождите 2 секунды перед началом...")
+        time.sleep(2)  # Задержка в 2 секунды
 
     def signal_handler(_sig, _frame):
         nonlocal running
-        logging.info("Получен сигнал завершения...")
+        if collect_data_enabled and max_frames_to_collect == -1:
+            logging.info("Получен сигнал завершения, сбор данных будет остановлен и результаты сохранены...")
+        else:
+            logging.info("Получен сигнал завершения...")
         running = False
 
     def example_processor(timestamp, image, pose, points):
@@ -918,7 +944,10 @@ def main():
 
         if (
             collect_data_enabled
-            and len(collected_frames) < max_frames_to_collect
+            and (
+                (len(collected_frames) < max_frames_to_collect)
+                or max_frames_to_collect == -1
+            )
             and pose is not None
         ):
             current_time = time.time()
@@ -926,19 +955,25 @@ def main():
             if collection_start_time is None:
                 collection_start_time = current_time
                 collected_frames.append((timestamp, image.copy(), pose, points))
-                logging.info("Собран кадр 1/%d (статус: OK)", max_frames_to_collect)
-            elif (
+                if max_frames_to_collect == -1:
+                    logging.info("Собран кадр %d (режим полного сбора)", len(collected_frames))
+                else:
+                    logging.info("Собран кадр 1/%d (статус: OK)", max_frames_to_collect)
+            elif collection_interval == 0 or (
                 current_time - collection_start_time
                 >= len(collected_frames) * collection_interval
             ):
                 collected_frames.append((timestamp, image.copy(), pose, points))
-                logging.info(
-                    "Собран кадр %s/%d (статус: OK)",
-                    len(collected_frames),
-                    max_frames_to_collect,
-                )
+                if max_frames_to_collect == -1:
+                    logging.info("Собран кадр %d (режим полного сбора)", len(collected_frames))
+                else:
+                    logging.info(
+                        "Собран кадр %d/%d (статус: OK)",
+                        len(collected_frames),
+                        max_frames_to_collect,
+                    )
 
-                if len(collected_frames) >= max_frames_to_collect:
+                if len(collected_frames) >= max_frames_to_collect and max_frames_to_collect != -1:
                     output_file, points_file = save_collected_data(
                         data_output_dir, collected_frames
                     )
@@ -1027,22 +1062,28 @@ def main():
             report_path = debug_visualizer.generate_report()
             logging.info("Сгенерирован отчет: %s", report_path)
 
-        if (
-            args.collect_data
-            and collected_frames
-            and len(collected_frames) < max_frames_to_collect
-        ):
+        if args.collect_data and collected_frames:
             output_file, points_file = save_collected_data(
                 data_output_dir, collected_frames
             )
-            logging.info(
-                "Программа завершается. Собрано %d/%d кадров. "
-                "Данные сохранены в %s и %s",
-                len(collected_frames),
-                max_frames_to_collect,
-                output_file,
-                points_file,
-            )
+            
+            if max_frames_to_collect == -1:
+                logging.info(
+                    "Программа завершается. Собрано %d кадров в режиме полного сбора. "
+                    "Данные сохранены в %s и %s",
+                    len(collected_frames),
+                    output_file,
+                    points_file,
+                )
+            else:
+                logging.info(
+                    "Программа завершается. Собрано %d/%d кадров. "
+                    "Данные сохранены в %s и %s",
+                    len(collected_frames),
+                    max_frames_to_collect,
+                    output_file,
+                    points_file,
+                )
 
         cv2.destroyAllWindows()
 
