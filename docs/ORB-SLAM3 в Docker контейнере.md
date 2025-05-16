@@ -83,7 +83,7 @@ python camera.py
 ```Shell
 git clone -b ue5-dev https://github.com/carla-simulator/carla.git CarlaUE5
 ```
-- 
+- Строго в терминале Windows PowerShell:
 ```Shell
 cd CarlaUE5
 CarlaSetup.bat
