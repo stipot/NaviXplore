@@ -135,38 +135,9 @@ target_link_libraries(mono_inertial ${PROJECT_NAME} ${ZeroMQ_LIBRARIES})
 ./Examples/Monocular/mono_euroc ./Vocabulary/ORBvoc.txt ./Examples/Monocular/EuRoC.yaml ../Datasets/EuRoc/carla_dataset_mono ../Datasets/EuRoC/carla_dataset_mono/mav0/timestamps.txt carla_dataset-mono
 ```
 
-- Актуальный запуск текущей архитектуры.
-- В NaviXplore/src/Monocular запустить
-```Shell
-./test_monocular_dataset.py --dataset carla_dataset_long_60fps/
-```
-- В отдельном терминале в NaviXplore/src/Monocular:
-```Shell
-./receive_coordinates.py
-```
-- В контейнере с ORB-SLAM3:
-```Shell
-./Examples/Monocular/camera_carla_transfer ./Vocabulary/ORBvoc.txt   ./Examp
-les/Monocular/carla_60.yaml   tcp://host.docker.internal:5555 tcp://host.docker.internal:5556
-```
-
 - Установка библиотеки JSON в Docker контейнер:
 ```Shell
 wget https://raw.githubusercontent.com/nlohmann/json/v3.11.2/single_include/nlohmann/json.hpp -P ./include/nlohmann/
-```
-
-- Новый запуск архитектуры.
-- В NaviXplore/src/Monocular запустить
-```Shell
-./receive_data.py --data-port 5557
-```
-- Подача датасета: в отдельном терминале в NaviXplore/src/Monocular:
-```Shell
-./test_monocular_dataset.py --dataset carla_dataset_long_60fps/
-```
-- В контейнере с ORB-SLAM3:
-```Shell
-./Examples/Monocular/camera_carla_transfer_extended ./Vocabulary/ORBvoc.txt   ./Examples/Monocular/carla_60.yaml tcp://host.docker.internal:5555 tcp://host.docker.internal:5557
 ```
 
 - Описание аргументов receive_data.py:
@@ -188,3 +159,26 @@ wget https://raw.githubusercontent.com/nlohmann/json/v3.11.2/single_include/nloh
 		- type=str
 		- default="collected_data"
 		- help="Директория для сохранения собранных данных"
+
+- Установка векторной базы данных Qdrant:
+```Shell
+pip install qdrant-client
+```
+- Запуск Qdrant в Docker контейнере. Перед этим запустить Docker.
+```Shell
+docker run -p 6333:6333 qdrant/qdrant
+```
+
+## Актуальный запуск
+- В NaviXplore/src/Monocular запустить
+```Shell
+./receive_data.py --data-port 5557
+```
+- Подача датасета: в отдельном терминале в NaviXplore/src/Monocular:
+```Shell
+./test_monocular_dataset.py --dataset carla_dataset_long_60fps/
+```
+- В контейнере с ORB-SLAM3:
+```Shell
+./Examples/Monocular/camera_carla_transfer_extended ./Vocabulary/ORBvoc.txt   ./Examples/Monocular/carla_60.yaml tcp://host.docker.internal:5555 tcp://host.docker.internal:5557
+```
