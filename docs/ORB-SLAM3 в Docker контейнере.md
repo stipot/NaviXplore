@@ -164,9 +164,15 @@ wget https://raw.githubusercontent.com/nlohmann/json/v3.11.2/single_include/nloh
 ```Shell
 pip install qdrant-client
 ```
-- Запуск Qdrant в Docker контейнере. Перед этим запустить Docker.
+
+- Создание Docker контейнера Qdrant с монтированием Docker Volume. Перед этим нужно запустить Docker.
 ```Shell
-docker run -p 6333:6333 qdrant/qdrant
+docker run -p 6333:6333 -v "$(pwd -W)/qdrant_data:/qdrant/storage" --name qdrant qdrant/qdrant
+```
+
+- Дальнейший запуск Qdrant:
+```Shell
+docker start -i qdrant
 ```
 
 ## Актуальный запуск
