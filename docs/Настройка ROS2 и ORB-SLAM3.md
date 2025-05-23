@@ -1,3 +1,4 @@
+# Заметки по разработке передатчика координат из Raspberry Pi 5 на Android смартфон
 
 Настройка IMU ноды:  
 git clone https://github.com/kimsniper/ros2_mpu6050.git  
@@ -50,4 +51,3 @@ Pose pose
 		float64 z 0
 		float64 w 1
 ```
-- 

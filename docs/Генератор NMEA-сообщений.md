@@ -1,3 +1,5 @@
+# Инструкция по настройке bluetooth соединения между Raspberry Pi 5 и Android смартфоном с передачей координат из ORB-SLAM3
+
 - 
 ```Shell
 sudo raspi-config

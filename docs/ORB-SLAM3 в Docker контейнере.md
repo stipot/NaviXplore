@@ -1,6 +1,8 @@
 Репозиторий: https://github.com/jonasctrl/ORB-SLAM3-docker
 - Установка:
 ```Shell
+git clone https://github.com/jonasctrl/ORB-SLAM3-docker.git
+cd ORB-SLAM3-docker
 docker build -t orb_slam3:latest .
 ```
 - 
@@ -19,14 +21,14 @@ docker exec -it orb_slam3_container bash
 ```Shell
 cd /opt/orb_slam3
 
-# Create directory for dataset
+# создание директории для датасета
 mkdir -p Datasets/EuRoc
 cd Datasets/EuRoc/
 
-# Download the dataset
+# Скачивание датасета
 wget -c http://robotics.ethz.ch/~asl-datasets/ijrr_euroc_mav_dataset/machine_hall/MH_01_easy/MH_01_easy.zip
 
-# Create a directory for MH_01_easy dataset and extract it
+# Создание поддиректории MH_01_easy и извлечение датасета в неё
 mkdir MH01
 unzip MH_01_easy.zip -d MH01/
 ```

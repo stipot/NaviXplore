@@ -23,6 +23,8 @@ src/Monocular/short_debug/
 src/Monocular/short_debug_1/
 src/Monocular/long_debug/
 
+qdrant_data
+
 collected_data.zip
 
 .VSCodeCounter/
