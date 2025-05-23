@@ -164,7 +164,7 @@ def main():
         "--loop",
         action="store_true",
         help="Повторять воспроизведение по кругу",
-        default=True,
+        default=False,
     )
     args = parser.parse_args()
 

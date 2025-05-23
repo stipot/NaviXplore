@@ -922,11 +922,10 @@ def main():
     collection_start_time = None
     collection_interval = args.collection_interval
 
-    # Добавляем лог и задержку для режима полного сбора
     if collect_data_enabled and max_frames_to_collect == -1:
         logging.info("Активирован режим полного сбора данных. Сбор будет продолжаться до ручного завершения (Ctrl+C)")
         logging.info("Подождите 2 секунды перед началом...")
-        time.sleep(2)  # Задержка в 2 секунды
+        time.sleep(2)
 
     def signal_handler(_sig, _frame):
         nonlocal running
