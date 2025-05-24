@@ -105,6 +105,7 @@ def main():
     )
     args = parser.parse_args()
     random.seed(args.seed)
+    np.random.seed(args.seed)
     logging.basicConfig(format="%(levelname)s: %(message)s", level=logging.INFO)
     logging.info("Запись датасета в директорию: %s", args.output)
     client = carla.Client(args.host, args.port)
@@ -123,6 +124,7 @@ def main():
     try:
         tm = client.get_trafficmanager(args.tm_port)
         tm.set_synchronous_mode(True)
+        tm.set_random_device_seed(args.seed)
         tm.global_percentage_speed_difference(100 - args.speed)
         blueprint_library = world.get_blueprint_library()
         vehicle_bp = blueprint_library.filter(args.filterv)[0]
