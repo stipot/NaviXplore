@@ -103,7 +103,7 @@ void ProcessImage(ORB_SLAM3::System& SLAM, const cv::Mat& im, const double& tfra
         memcpy(message.data(), json_data.data(), json_data.size());
         publisher.send(message, zmq::send_flags::none);
         
-        std::cout << "Tracking lost!" << std::endl;
+        std::cout << "Отслеживание потеряно!" << std::endl;
     }
 }
 
@@ -111,8 +111,8 @@ int main(int argc, char **argv)
 {
     if(argc != 5)
     {
-        std::cerr << "Usage: " << argv[0] << " <path_to_vocabulary> <path_to_settings> "
-                  << "<zmq_input_address> <zmq_output_address>" << std::endl;
+        std::cerr << "Использование: " << argv[0] << " <путь_к_словарю> <путь_к_настройкам> "
+                  << "<zmq_адрес_ввода> <zmq_адрес_вывода>" << std::endl;
         return 1;
     }
 
@@ -129,18 +129,18 @@ int main(int argc, char **argv)
     try {
         image_subscriber.connect(zmq_input_address);
         image_subscriber.set(zmq::sockopt::subscribe, "");
-        std::cout << "Connected to image stream at " << zmq_input_address << std::endl;
+        std::cout << "Подключено к потоку изображений: " << zmq_input_address << std::endl;
     } catch (zmq::error_t& e) {
-        std::cerr << "Failed to connect to ZMQ image server: " << e.what() << std::endl;
+        std::cerr << "Не удалось подключиться к ZMQ серверу изображений: " << e.what() << std::endl;
         return 1;
     }
 
     zmq::socket_t publisher(context, ZMQ_PUB);
     try {
         publisher.connect(zmq_output_address);
-        std::cout << "Publishing all data to " << zmq_output_address << std::endl;
+        std::cout << "Публикация всех данных по адресу: " << zmq_output_address << std::endl;
     } catch (zmq::error_t& e) {
-        std::cerr << "Failed to connect publisher: " << e.what() << std::endl;
+        std::cerr << "Не удалось подключить публикатор: " << e.what() << std::endl;
         return 1;
     }
 
@@ -149,7 +149,7 @@ int main(int argc, char **argv)
         zmq::message_t json_message;
         zmq::recv_result_t result = image_subscriber.recv(json_message, zmq::recv_flags::none);
         if (!result) {
-            std::cerr << "Failed to receive metadata" << std::endl;
+            std::cerr << "Не удалось получить метаданные" << std::endl;
             continue;
         }
         
@@ -162,14 +162,14 @@ int main(int argc, char **argv)
             timestamp = static_cast<double>(json_data["timestamp"].get<uint64_t>());
             frame_id = json_data["frame_id"].get<int>();
         } catch (std::exception& e) {
-            std::cerr << "Error parsing JSON: " << e.what() << std::endl;
+            std::cerr << "Ошибка при чтении JSON: " << e.what() << std::endl;
             continue;
         }
 
         zmq::message_t image_message;
         result = image_subscriber.recv(image_message, zmq::recv_flags::none);
         if (!result) {
-            std::cerr << "Failed to receive image data" << std::endl;
+            std::cerr << "Не удалось получить изображения" << std::endl;
             continue;
         }
 
@@ -180,7 +180,7 @@ int main(int argc, char **argv)
 
         if (img.empty())
         {
-            std::cerr << "Failed to decode image" << std::endl;
+            std::cerr << "Не удалось декодировать изображение" << std::endl;
             continue;
         }
 
