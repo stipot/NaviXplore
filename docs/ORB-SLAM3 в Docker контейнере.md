@@ -164,6 +164,7 @@ wget https://raw.githubusercontent.com/nlohmann/json/v3.11.2/single_include/nloh
 
 - Установка векторной базы данных Qdrant:
 ```Shell
+docker pull qdrant/qdrant
 pip install qdrant-client
 ```
 
