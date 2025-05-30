@@ -124,7 +124,6 @@ PID_RECORD=""
 cleanup() {
     echo "Получен сигнал завершения, останавливаем все процессы..."
     
-    # Завершение ORB-SLAM3
     if [ ! -z "$ORBSLAM_PID" ]; then
         echo "Отправка SIGINT процессу ORB-SLAM3..."
         docker exec $CONTAINER_NAME kill -2 "$ORBSLAM_PID" || true
@@ -176,7 +175,6 @@ DEFAULT_RECEIVE_COLLECTION_DATA_OUTPUT="collected_data"
 DEFAULT_RECEIVE_COLLECTION_MAX_FRAMES="100"
 DEFAULT_RECEIVE_COLLECTION_INTERVAL="1.0"
 
-# Если аргумент был явно указан пользователем
 declare -A PROVIDED_ARGS
 
 print_record_params() {
@@ -312,25 +310,33 @@ start_orbslam3() {
 }
 
 start_receiver() {
-    local data_port=$1
-    local receive_cmd="./receive_data.py --data-port $data_port"
+    local receive_cmd="./receive_data.py"
     
-    if [ "$RECEIVE_DEBUG" = true ]; then
+    if [[ "${PROVIDED_ARGS[receive_data_port]}" == "true" ]]; then
+      receive_cmd="$receive_cmd --data-port $RECEIVE_DATA_PORT"
+    fi
+    
+    if [[ "${PROVIDED_ARGS[receive_debug]}" == "true" ]]; then
       receive_cmd="$receive_cmd --debug"
     fi
-    if [ ! -z "$RECEIVE_DEBUG_OUTPUT" ]; then
+    
+    if [[ "${PROVIDED_ARGS[receive_debug_output]}" == "true" ]]; then
       receive_cmd="$receive_cmd --debug-output $RECEIVE_DEBUG_OUTPUT"
     fi
-    if [ "$RECEIVE_COLLECT_DATA" = true ]; then
+    
+    if [[ "${PROVIDED_ARGS[receive_collect_data]}" == "true" ]]; then
       receive_cmd="$receive_cmd --collect-data"
     fi
-    if [ ! -z "$RECEIVE_COLLECTION_DATA_OUTPUT" ]; then
+    
+    if [[ "${PROVIDED_ARGS[receive_collection_data_output]}" == "true" ]]; then
       receive_cmd="$receive_cmd --collection-data-output $RECEIVE_COLLECTION_DATA_OUTPUT"
     fi
-    if [ ! -z "$RECEIVE_COLLECTION_MAX_FRAMES" ]; then
+    
+    if [[ "${PROVIDED_ARGS[receive_collection_max_frames]}" == "true" ]]; then
       receive_cmd="$receive_cmd --collection-max-frames $RECEIVE_COLLECTION_MAX_FRAMES"
     fi
-    if [ ! -z "$RECEIVE_COLLECTION_INTERVAL" ]; then
+    
+    if [[ "${PROVIDED_ARGS[receive_collection_interval]}" == "true" ]]; then
       receive_cmd="$receive_cmd --collection-interval $RECEIVE_COLLECTION_INTERVAL"
     fi
     
@@ -347,13 +353,15 @@ start_sender() {
     local dataset=$1
     local test_cmd="./test_monocular_dataset.py --dataset $dataset"
     
-    if [ ! -z "$TEST_PORT" ]; then
+    if [[ "${PROVIDED_ARGS[test_port]}" == "true" ]]; then
       test_cmd="$test_cmd --port $TEST_PORT"
     fi
-    if [ ! -z "$TEST_SPEED" ]; then
+    
+    if [[ "${PROVIDED_ARGS[test_speed]}" == "true" ]]; then
       test_cmd="$test_cmd --speed $TEST_SPEED"
     fi
-    if [ "$TEST_LOOP" = true ]; then
+    
+    if [[ "${PROVIDED_ARGS[test_loop]}" == "true" ]]; then
       test_cmd="$test_cmd --loop"
     fi
     
@@ -366,7 +374,6 @@ start_sender() {
     echo "Запущен отправитель данных, PID: $PID_SENDER"
 }
 
-# Замена числовых значений на строковые для корректного отображения
 COMMANDS=()
 ALL_ARGS=("$@")
 CURRENT_COMMAND=""
@@ -635,15 +642,20 @@ if [[ " ${COMMANDS[@]} " =~ " receive " ]]; then
 fi
 echo "=========================================="
 
-# Запуск ORB-SLAM3 один раз, если используется test или receive
-if [[ " ${COMMANDS[@]} " =~ " test " ]] || [[ " ${COMMANDS[@]} " =~ " receive " ]]; then
+if [[ " ${COMMANDS[@]} " =~ " test " ]]; then
   echo "Запуск ORB-SLAM3..."
   start_orbslam3
 fi
 
+# Проверка необходимости ORB-SLAM3 при запуске receive вместе с test
 if [[ " ${COMMANDS[@]} " =~ " receive " ]]; then
-  echo "Запуск приемника данных..."
-  start_receiver $RECEIVE_DATA_PORT
+  # Если запускается receive без test, ORB-SLAM3 не нужен
+  if [[ ! " ${COMMANDS[@]} " =~ " test " ]]; then
+    echo "Запуск приемника данных в автономном режиме..."
+  else
+    echo "Запуск приемника данных вместе с ORB-SLAM3..."
+  fi
+  start_receiver
 fi
 
 if [[ " ${COMMANDS[@]} " =~ " test " ]]; then
@@ -657,28 +669,34 @@ if [[ " ${COMMANDS[@]} " =~ " record " ]]; then
   
   RECORD_CMD="./record_monocular_dataset.py --output $RECORD_OUTPUT --duration $RECORD_DURATION"
   
-  if [ ! -z "$RECORD_SEED" ]; then
+  if [[ "${PROVIDED_ARGS[record_seed]}" == "true" ]]; then
     RECORD_CMD="$RECORD_CMD --seed $RECORD_SEED"
   fi
-  if [ ! -z "$RECORD_FILTERV" ]; then
+  
+  if [[ "${PROVIDED_ARGS[record_filterv]}" == "true" ]]; then
     RECORD_CMD="$RECORD_CMD --filterv \"$RECORD_FILTERV\""
   fi
-  if [ ! -z "$RECORD_HOST" ]; then
+  
+  if [[ "${PROVIDED_ARGS[record_host]}" == "true" ]]; then
     RECORD_CMD="$RECORD_CMD --host $RECORD_HOST"
   fi
-  if [ ! -z "$RECORD_PORT" ]; then
+  
+  if [[ "${PROVIDED_ARGS[record_port]}" == "true" ]]; then
     RECORD_CMD="$RECORD_CMD --port $RECORD_PORT"
   fi
-  if [ ! -z "$RECORD_TM_PORT" ]; then
+  
+  if [[ "${PROVIDED_ARGS[record_tm_port]}" == "true" ]]; then
     RECORD_CMD="$RECORD_CMD --tm-port $RECORD_TM_PORT"
   fi
-  if [ "$RECORD_PREVIEW" = true ]; then
+  
+  if [[ "${PROVIDED_ARGS[record_preview]}" == "true" ]]; then
     RECORD_CMD="$RECORD_CMD --preview"
   fi
-  if [ ! -z "$RECORD_SPEED" ]; then
+  
+  if [[ "${PROVIDED_ARGS[record_speed]}" == "true" ]]; then
     RECORD_CMD="$RECORD_CMD --speed $RECORD_SPEED"
   fi
-  
+
   echo "Выполняется команда: $RECORD_CMD"
   echo "Запись набора данных из $RECORD_DURATION секунд симуляции..."
   
@@ -743,7 +761,13 @@ if [[ " ${COMMANDS[@]} " =~ " test " ]] || [[ " ${COMMANDS[@]} " =~ " receive " 
       elif [ ! -z "$PID_SENDER" ]; then
         has_active_processes=true
       fi
+    elif [[ " ${COMMANDS[@]} " =~ " receive " ]] && [[ ! " ${COMMANDS[@]} " =~ " test " ]]; then
+      
+      if [ ! -z "$PID_RECEIVER" ] && ps -p $PID_RECEIVER > /dev/null 2>&1; then 
+        has_active_processes=true
+      fi
     else
+      # Проверка для test+receive
       if [ ! -z "$ORBSLAM_PID" ]; then has_active_processes=true; fi
       if [ ! -z "$PID_RECEIVER" ] && ps -p $PID_RECEIVER > /dev/null 2>&1; then has_active_processes=true; fi
       if [ ! -z "$PID_SENDER" ] && ps -p $PID_SENDER > /dev/null 2>&1; then has_active_processes=true; fi
