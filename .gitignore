@@ -28,3 +28,6 @@ qdrant_data
 collected_data.zip
 
 .VSCodeCounter/
+out/
+*.puml
+Структура
