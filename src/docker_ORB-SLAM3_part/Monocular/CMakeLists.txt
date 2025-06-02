@@ -213,9 +213,9 @@ add_executable(camera
         Examples/Monocular/camera.cc)
 target_link_libraries(camera ${PROJECT_NAME} ${ZeroMQ_LIBRARIES})
 
-add_executable(camera_carla_transfer
-        Examples/Monocular/camera_carla_transfer.cc)
-target_link_libraries(camera_carla_transfer ${PROJECT_NAME} ${ZeroMQ_LIBRARIES})
+# add_executable(camera_carla_transfer
+#         Examples/Monocular/camera_carla_transfer.cc)
+# target_link_libraries(camera_carla_transfer ${PROJECT_NAME} ${ZeroMQ_LIBRARIES})
 
 add_executable(camera_carla_transfer_extended
         Examples/Monocular/camera_carla_transfer_extended.cc)
@@ -260,9 +260,9 @@ if(realsense2_FOUND)
     target_link_libraries(mono_inertial_realsense_D435i ${PROJECT_NAME})
 endif()
 
-add_executable(mono_inertial
-        Examples/Monocular-Inertial/mono_inertial_zmq.cc)
-target_link_libraries(mono_inertial ${PROJECT_NAME} ${ZeroMQ_LIBRARIES})
+# add_executable(mono_inertial
+#         Examples/Monocular-Inertial/mono_inertial_zmq.cc)
+# target_link_libraries(mono_inertial ${PROJECT_NAME} ${ZeroMQ_LIBRARIES})
 
 #Stereo Inertial examples
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/Examples/Stereo-Inertial)
