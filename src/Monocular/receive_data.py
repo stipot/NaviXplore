@@ -60,7 +60,7 @@ class ORBDataReceiver:
     """Класс для приема всех данных от ORB-SLAM3: изображений, позиции камеры и точек"""
 
     def __init__(self, data_port: int, max_buffer_size: int = 10):
-        """Инициализация получателя всех данных от ORB-SLAM3"""
+        """Инициализация приёмника данных от ORB-SLAM3"""
         self.data_port = data_port
         self.max_buffer_size = max_buffer_size
 
@@ -292,7 +292,7 @@ class DebugVisualizer:
         """
         Инициализация отладочного визуализатора
 
-        Args:
+        Аргументы:
             output_dir: Директория для сохранения отладочных данных
         """
         self.output_dir = output_dir
@@ -328,7 +328,7 @@ class DebugVisualizer:
         """
         Обработка нового кадра и точек с сохранением отладочной информации
 
-        Args:
+        Аргументы:
             timestamp: Временная метка кадра
             image: Изображение
             pose: Позиция и ориентация камеры
@@ -402,7 +402,7 @@ class DebugVisualizer:
         """
         Сохраняет информацию о точках в CSV-файл
 
-        Args:
+        Аргументы:
             timestamp: Временная метка кадра
             points: Список ключевых точек
         """
@@ -418,7 +418,7 @@ class DebugVisualizer:
         """
         Отрисовка точек на изображении с цветовой кодировкой расстояния до камеры
 
-        Args:
+        Аргументы:
             frame: Изображение для отрисовки
             points: Список ключевых точек
         """
@@ -482,7 +482,7 @@ class DebugVisualizer:
         """
         Вывод подробной информации о точках в консоль
 
-        Args:
+        Аргументы:
             timestamp: Временная метка кадра
             points: Список ключевых точек
             max_points: Максимальное количество точек для вывода
@@ -821,10 +821,10 @@ def ensure_unique_directory(base_dir: str) -> str:
     """
     Создает уникальную директорию с добавлением индекса, если требуется
 
-    Args:
+    Аргументы:
         base_dir: Базовое имя директории
 
-    Returns:
+    Возвращает:
         Уникальное имя директории (с индексом, если требуется)
     """
     if os.path.exists(base_dir) and os.path.isdir(base_dir) and os.listdir(base_dir):
@@ -843,47 +843,57 @@ def ensure_unique_directory(base_dir: str) -> str:
 
 
 def main():
+    """Главная функция. Запускает программу"""
     parser = argparse.ArgumentParser(description="Прием данных от ORB-SLAM3")
     parser.add_argument(
         "--data-port",
+        metavar="INT",
         type=int,
         default=5557,
         help="""Порт для приема всех данных (по умолчанию 5557)""",
     )
-    parser.add_argument("--debug", action="store_true", help="Включить режим отладки")
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Включить режим отладки (по умолчанию выключено)",
+    )
     parser.add_argument(
         "--debug-output",
+        metavar="СТРОКА",
         type=str,
         default="debug_output",
-        help="""Директория для сохранения отладочных данных""",
+        help="""Директория для сохранения отладочных данных (по умолчанию \"debug_output\")""",
     )
     parser.add_argument(
         "--collect-data",
         action="store_true",
-        help="""Собрать и сохранить все данные с информацией из ORB-SLAM3""",
+        help="""Собрать и сохранить все данные с информацией из ORB-SLAM3 (по умолчанию выключено)""",
     )
     parser.add_argument(
         "--collection-data-output",
+        metavar="СТРОКА",
         type=str,
         default="collected_data",
         help="""Директория для сохранения собранных данных. Используется только
-        при активном аргументе collect-data""",
+        при активном аргументе collect-data (по умолчанию \"collected_data\")""",
     )
     parser.add_argument(
         "--collection-max-frames",
+        metavar="INT",
         type=int,
         default=100,
         help="""Максимальное количество кадров для сбора.
         -1 для сбора всех кадров. Используется только
-        при активном аргументе collect-data""",
+        при активном аргументе collect-data (по умолчанию 100)""",
     )
     parser.add_argument(
         "--collection-interval",
+        metavar="FLOAT",
         type=float,
         default=1.0,
         help="""Интервал между собираемыми данными.
         0 для сбора всех кадров. Используется только
-        при активном аргументе collect-data""",
+        при активном аргументе collect-data (по умолчанию 1.0)""",
     )
     args = parser.parse_args()
 
@@ -904,19 +914,25 @@ def main():
     collection_interval = args.collection_interval
 
     if collect_data_enabled and max_frames_to_collect == -1:
-        logging.info("Активирован режим полного сбора данных. Сбор будет продолжаться до ручного завершения (Ctrl+C)")
+        logging.info(
+            "Активирован режим полного сбора данных. Сбор будет продолжаться до ручного завершения (Ctrl+C)"
+        )
         logging.info("Подождите 2 секунды перед началом...")
         time.sleep(2)
 
     def signal_handler(_sig, _frame):
+        """Обработчик завершения программы"""
         nonlocal running
         if collect_data_enabled and max_frames_to_collect == -1:
-            logging.info("Получен сигнал завершения, сбор данных будет остановлен и результаты сохранены...")
+            logging.info(
+                "Получен сигнал завершения, сбор данных будет остановлен и результаты сохранены..."
+            )
         else:
             logging.info("Получен сигнал завершения...")
         running = False
 
     def example_processor(timestamp, image, pose, points):
+        """Основной обработчик"""
         nonlocal collected_frames, collection_start_time, running
 
         timestamp_str = str(int(timestamp))
@@ -936,7 +952,9 @@ def main():
                 collection_start_time = current_time
                 collected_frames.append((timestamp, image.copy(), pose, points))
                 if max_frames_to_collect == -1:
-                    logging.info("Собран кадр %d (режим полного сбора)", len(collected_frames))
+                    logging.info(
+                        "Собран кадр %d (режим полного сбора)", len(collected_frames)
+                    )
                 else:
                     logging.info("Собран кадр 1/%d (статус: OK)", max_frames_to_collect)
             elif collection_interval == 0 or (
@@ -945,7 +963,9 @@ def main():
             ):
                 collected_frames.append((timestamp, image.copy(), pose, points))
                 if max_frames_to_collect == -1:
-                    logging.info("Собран кадр %d (режим полного сбора)", len(collected_frames))
+                    logging.info(
+                        "Собран кадр %d (режим полного сбора)", len(collected_frames)
+                    )
                 else:
                     logging.info(
                         "Собран кадр %d/%d (статус: OK)",
@@ -953,7 +973,10 @@ def main():
                         max_frames_to_collect,
                     )
 
-                if len(collected_frames) >= max_frames_to_collect and max_frames_to_collect != -1:
+                if (
+                    len(collected_frames) >= max_frames_to_collect
+                    and max_frames_to_collect != -1
+                ):
                     output_file, points_file = save_collected_data(
                         data_output_dir, collected_frames
                     )
@@ -1046,7 +1069,7 @@ def main():
             output_file, points_file = save_collected_data(
                 data_output_dir, collected_frames
             )
-            
+
             if max_frames_to_collect == -1:
                 logging.info(
                     "Программа завершается. Собрано %d кадров в режиме полного сбора. "

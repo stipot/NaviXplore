@@ -39,7 +39,6 @@ show_help() {
   echo "                            По умолчанию: \"vehicle.dodge.charger\"."
 
   echo "  --host <СТРОКА>           IP-адрес CARLA сервера."
-  echo "                            Тип: строковый."
   echo "                            По умолчанию: \"127.0.0.1\"."
 
   echo "  --rport <INT>             Порт CARLA сервера."
@@ -81,7 +80,7 @@ show_help() {
   echo "  --debug-output <СТРОКА>   Директория для сохранения отладочных данных."
   echo "                            По умолчанию: \"debug_output\"."
 
-  echo "  --collect-data            Собрать и сохранить данные с ORB-SLAM3."
+  echo "  --collect-data            Собрать и сохранить все данные с информацией из ORB-SLAM3."
   echo "                            По умолчанию: выключено."
 
   echo "  --collection-data-output <СТРОКА>  Директория для сохранения собранных данных."

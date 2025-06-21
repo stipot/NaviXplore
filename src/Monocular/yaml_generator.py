@@ -95,6 +95,7 @@ Viewer.ViewpointF: 500.0
 
 
 def compute_intrinsics(width, height, fov):
+    """Рассчитывает данные фокусного расстояния для камеры"""
     fx = width / (2.0 * math.tan(math.radians(fov) / 2.0))
     fy = fx
     cx = width / 2.0

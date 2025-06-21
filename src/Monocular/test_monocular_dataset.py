@@ -140,22 +140,25 @@ class DatasetPlayer:
 
 
 def main():
+    """Главная функция. Запускает программу"""
     signal.signal(signal.SIGINT, signal_handler)
 
     parser = argparse.ArgumentParser(
         description="Воспроизведение датасета с отправкой через ZMQ"
     )
     parser.add_argument(
-        "--dataset", type=str, required=True, help="Путь к директории с датасетом"
+        "--dataset", metavar="СТРОКА", type=str, required=True, help="Директория"
     )
     parser.add_argument(
         "--port",
+        metavar="INT",
         type=int,
         default=DEFAULT_PORT,
         help=f"Порт для ZMQ PUB сокета (по умолчанию {DEFAULT_PORT})",
     )
     parser.add_argument(
         "--speed",
+        metavar="FLOAT",
         type=float,
         default=1.0,
         help="Множитель скорости воспроизведения (по умолчанию 1.0)",
@@ -163,7 +166,7 @@ def main():
     parser.add_argument(
         "--loop",
         action="store_true",
-        help="Повторять воспроизведение по кругу",
+        help="Зациклить воспроизведение (по умолчанию: выключено)",
         default=False,
     )
     args = parser.parse_args()
@@ -190,5 +193,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-# Использование: ./test_monocular_dataset.py --dataset <Директория>

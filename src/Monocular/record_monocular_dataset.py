@@ -29,13 +29,17 @@ running = True
 
 
 def signal_handler(sig, frame):
+    """Обработчик завершения программы"""
     global running
     running = False
     logging.info("Получен сигнал завершения, остановка записи...")
 
 
 class SimpleDatasetRecorder:
+    """Класс для сохранения собранных данных"""
+
     def __init__(self, output_path, preview=True):
+        """Инициализация сборщика данных"""
         self.output_path = output_path
         self.images_path = os.path.join(output_path, "images")
         os.makedirs(self.images_path, exist_ok=True)
@@ -65,6 +69,7 @@ class SimpleDatasetRecorder:
             cv2.waitKey(1)
 
     def close(self):
+        """Закрывает файл с временными метками"""
         self.timestamps_file.close()
         logging.info("Записано %d кадров", self.frame_count)
 
@@ -79,29 +84,72 @@ def disable_traffic_lights(world):
 
 
 def main():
+    """Главная функция. Запускает программу"""
     signal.signal(signal.SIGINT, signal_handler)
     parser = argparse.ArgumentParser(
         description="Запись монокулярного датасета из CARLA"
     )
     parser.add_argument(
-        "--output", type=str, required=True, help="Путь для сохранения датасета"
+        "--output", metavar="СТРОКА", type=str, required=True, help="Директория"
     )
     parser.add_argument(
-        "--duration", type=int, default=60, help="Длительность записи в секундах"
+        "--duration",
+        metavar="INT",
+        type=int,
+        default=60,
+        help="Длительность в секундах (по умолчанию 60)",
     )
-    parser.add_argument("--seed", type=int, default=int(time.time()))
-    parser.add_argument("--filterv", metavar="PATTERN", default="vehicle.dodge.charger")
-    parser.add_argument("--host", default="127.0.0.1", help="IP-адрес CARLA сервера")
-    parser.add_argument("--port", type=int, default=2000, help="Порт CARLA сервера")
     parser.add_argument(
-        "--tm-port", type=int, default=8000, help="Порт Traffic Manager"
+        "--seed",
+        metavar="INT",
+        type=int,
+        default=int(time.time()),
+        help="""Заданный сид, если нужно детерминированное поведение
+        (по умолчанию текущее время через команду time.time())""",
     )
-    parser.add_argument("--preview", dest="preview", action="store_true", default=True)
+    parser.add_argument(
+        "--filterv",
+        metavar="СТРОКА",
+        default="vehicle.dodge.charger",
+        help="""Модель транспорта. Узнать доступные модели можно в документации CARLA Simulator
+        (по умолчанию \"vehicle.dodge.charger\")""",
+    )
+    parser.add_argument(
+        "--host",
+        metavar="СТРОКА",
+        default="127.0.0.1",
+        help="""IP-адрес CARLA сервера (по умолчанию \"127.0.0.1\")""",
+    )
+    parser.add_argument(
+        "--port",
+        metavar="INT",
+        type=int,
+        default=2000,
+        help="""Порт CARLA сервера (по умолчанию 2000)""",
+    )
+    parser.add_argument(
+        "--tm-port",
+        metavar="INT",
+        type=int,
+        default=8000,
+        help="""Порт Traffic Manager. Подробнее про Traffic Manager можно узнать в документации CARLA Simulator
+        (по умолчанию 8000)""",
+    )
+    parser.add_argument(
+        "--preview",
+        dest="preview",
+        action="store_true",
+        default=True,
+        help="""Включить окно предпросмотра из камеры
+        (по умолчанию True)""",
+    )
     parser.add_argument(
         "--speed",
+        metavar="FLOAT",
         type=float,
         default=100.0,
-        help="Скорость движения в процентах (100%% - нормальная, 50%% - половина)",
+        help="""Скорость движения в процентах. 100%% - нормальная, 50%% - половина
+        (по умолчанию 100.0)""",
     )
     args = parser.parse_args()
     random.seed(args.seed)
@@ -203,5 +251,3 @@ if __name__ == "__main__":
         logging.error("Критическая ошибка: %s", e)
     finally:
         logging.info("Программа завершена")
-
-# Использование: ./record_monocular_dataset.py --output <Директория> --duration <Длительность в секундах>
