@@ -159,7 +159,6 @@ def main():
     client = carla.Client(args.host, args.port)
     client.set_timeout(10.0)
     world = client.get_world()
-    disable_traffic_lights(world)
     # original_settings = world.get_settings()
     settings = world.get_settings()
     settings.fixed_delta_seconds = SIMULATION_DT
@@ -174,6 +173,7 @@ def main():
         tm.set_synchronous_mode(True)
         tm.set_random_device_seed(args.seed)
         tm.global_percentage_speed_difference(100 - args.speed)
+        disable_traffic_lights(world)
         blueprint_library = world.get_blueprint_library()
         vehicle_bp = blueprint_library.filter(args.filterv)[0]
         spawn_points = world.get_map().get_spawn_points()
